@@ -237,7 +237,35 @@ const migratePatient = (p: any): Patient => {
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'home' | 'beds' | 'guide'>('home');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
-  const [bedFilter, setBedFilter] = useState<'all' | 'vent' | 'high_risk'>('all');
+
+// จำค่าตัวกรองเตียงไว้ แม้รีเฟรชหน้าเว็บ
+const [bedFilter, setBedFilter] = useState<'all' | 'vent' | 'high_risk'>(() => {
+  try {
+    const saved = localStorage.getItem('vap_bed_filter');
+
+    if (
+      saved === 'all' ||
+      saved === 'vent' ||
+      saved === 'high_risk'
+    ) {
+      return saved;
+    }
+  } catch (error) {
+    console.error('ไม่สามารถอ่านค่าตัวกรองได้', error);
+  }
+
+  return 'all';
+});
+
+// บันทึกค่าทุกครั้งที่เปลี่ยนตัวกรอง
+useEffect(() => {
+  try {
+    localStorage.setItem('vap_bed_filter', bedFilter);
+  } catch (error) {
+    console.error('ไม่สามารถบันทึกค่าตัวกรองได้', error);
+  }
+}, [bedFilter]);
+
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);

@@ -47,6 +47,12 @@ import {
   getDocs 
 } from 'firebase/firestore';
 
+// Helper to clean any HTML entities (&gt;, &lt;) saved in existing Firestore records
+const decodeSymbols = (str: string) => {
+  if (!str) return '';
+  return str.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+};
+
 interface ChecklistItem {
   id: string;
   groupKey: 'W' | 'H' | 'A' | 'P' | 'O' | 'S';
@@ -210,8 +216,8 @@ const migratePatient = (p: any): Patient => {
       return {
         id: i.id || ('item-' + Math.random()),
         groupKey: i.groupKey || 'W',
-        groupTitle: i.groupTitle || 'W - WEAN การหย่าเครื่องช่วยหายใจ',
-        text: i.text || '',
+        groupTitle: decodeSymbols(i.groupTitle || 'W - WEAN การหย่าเครื่องช่วยหายใจ'),
+        text: decodeSymbols(i.text || ''),
         status: (status as 'complied' | 'not_complied' | 'pending') || 'pending'
       };
     });
@@ -222,8 +228,8 @@ const migratePatient = (p: any): Patient => {
     return list.map(i => ({
       id: i.id || ('ws-' + Math.random()),
       category: i.category || 1,
-      categoryTitle: i.categoryTitle || 'หมวดที่ 1',
-      text: i.text || '',
+      categoryTitle: decodeSymbols(i.categoryTitle || 'หมวดที่ 1'),
+      text: decodeSymbols(i.text || ''),
       status: (i.status as 'complied' | 'not_complied' | 'pending') || 'pending',
       note: i.note || ''
     }));
@@ -599,12 +605,12 @@ export default function App() {
     const riskInfo = getRiskTier(shiftProg);
     const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY;
 
-    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ] ${i.text}`);
-    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ] ${i.text}`);
-    const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ] ${i.text}`);
+    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ] ${decodeSymbols(i.text)}`);
+    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ] ${decodeSymbols(i.text)}`);
+    const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ] ${decodeSymbols(i.text)}`);
 
-    const surveyComplied = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ ${i.text}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
-    const surveyNotComplied = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ ${i.text}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
+    const surveyComplied = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
+    const surveyNotComplied = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
 
     return `[สรุปส่งเวร หอผู้ป่วยอายุรกรรมหญิง 3 (อญ.3)]
 ผู้ประเมิน: ${pt.lastAssessedBy || nurseName} (${pt.lastAssessedShift || shiftName}) เวลา ${pt.lastAssessedTime || '09:00 น.'}
@@ -699,7 +705,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </div>
         </header>
 
-        {/* Main Body View - Added pt-4 so header never overlaps content */}
+        {/* Main Body View */}
         <div className="flex-1 overflow-y-auto pb-24 pt-4 px-4 bg-[#F0FDFA]">
           
           {/* ================= 1. HOME SCREEN ================= */}
@@ -1039,7 +1045,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       const shiftItems = selectedPatient.checklists?.[activeChecklistShift] || DEFAULT_WHAPOS_CHECKLIST;
                       const groupItems = shiftItems.filter(i => i.groupKey === groupKey);
                       if (groupItems.length === 0) return null;
-                      const groupTitle = groupItems[0].groupTitle;
+                      const groupTitle = decodeSymbols(groupItems[0].groupTitle);
                       const groupCompliedCount = groupItems.filter(i => i.status === 'complied').length;
 
                       return (
@@ -1060,6 +1066,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                             {groupItems.map(item => {
                               const isComplied = item.status === 'complied';
                               const isNotComplied = item.status === 'not_complied';
+                              const cleanText = decodeSymbols(item.text);
 
                               return (
                                 <React.Fragment key={item.id}>
@@ -1072,7 +1079,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                   >
                                     <div className="flex-1">
                                       <p className="text-xs font-sarabun font-medium text-slate-800 leading-relaxed">
-                                        {item.text}
+                                        {cleanText}
                                       </p>
                                     </div>
 
@@ -1103,7 +1110,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                   </div>
 
                                   {/* If this item is "ใช้ weaning protocol", attach the Expandable Weaning Protocol Survey accordion below it */}
-                                  {item.text === 'ใช้ weaning protocol' && (
+                                  {cleanText === 'ใช้ weaning protocol' && (
                                     <div className="mt-2 ml-2 sm:ml-4 border-l-2 border-teal-500 pl-3 space-y-2">
                                       <button
                                         onClick={() => setShowWeaningProtocolSurvey(prev => !prev)}
@@ -1127,7 +1134,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                             const surveyList = selectedPatient.weaningSurveys?.[activeChecklistShift] || DEFAULT_WEANING_SURVEY;
                                             const catItems = surveyList.filter(s => s.category === catNum);
                                             if (catItems.length === 0) return null;
-                                            const catTitle = catItems[0].categoryTitle;
+                                            const catTitle = decodeSymbols(catItems[0].categoryTitle);
 
                                             return (
                                               <div key={catNum} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
@@ -1139,12 +1146,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                                   {catItems.map(surveyItem => {
                                                     const sComplied = surveyItem.status === 'complied';
                                                     const sNotComplied = surveyItem.status === 'not_complied';
+                                                    const cleanSurveyText = decodeSymbols(surveyItem.text);
 
                                                     return (
                                                       <div key={surveyItem.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                                           <p className="text-[11px] font-sarabun font-medium text-slate-800 flex-1 leading-relaxed">
-                                                            {surveyItem.text}
+                                                            {cleanSurveyText}
                                                           </p>
                                                           <div className="flex items-center gap-1 flex-shrink-0">
                                                             <button
@@ -1251,7 +1259,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                   <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between">
                     <div>
-                      <strong className="text-rose-800 font-prompt">คะแนน < 60% (เสี่ยงมาก):</strong>
+                      <strong className="text-rose-800 font-prompt">คะแนน &lt; 60% (เสี่ยงมาก):</strong>
                       <div className="text-[11px] text-rose-700">ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)</div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">เสี่ยงมาก</span>
@@ -1346,7 +1354,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-pink-600 font-sarabun">
                     <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง</li>
-                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ >1,500 ppm</li>
+                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm</li>
                     <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน</li>
                   </ul>
                 </div>

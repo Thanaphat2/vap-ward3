@@ -3,637 +3,124 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
-  Users,
   BookOpen,
   ChevronRight,
-  ChevronDown,
   CheckCircle2,
-  Plus,
-  Copy,
-  Check,
-  Trash2,
-  ShieldAlert,
-  X,
-  ArrowLeft,
-  AlertTriangle,
   Cloud,
   CloudOff,
+  Plus,
   RefreshCcw,
-  CheckCircle,
+  ShieldAlert,
   User,
-  Sun,
-  Sunset,
-  Moon,
-  FileText
+  Users
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import GuideScreen from './components/GuideScreen';
+import { AddPatientModal, CloudModal, DeleteConfirmModal, NurseModal } from './components/Modals';
+import PatientCard from './components/PatientCard';
+import PatientDetail from './components/PatientDetail';
+import { DEFAULT_GOOGLE_SHEET_URL, DEFAULT_NURSE_NAME, SHIFT_BY_LABEL, STORAGE_KEYS } from './constants';
+import { useLocalStorageState } from './hooks/useLocalStorageState';
+import { usePatients } from './hooks/usePatients';
+import type { Assessor, NewPatientInput, Shift, ShiftLabel } from './types';
+import { getRiskTier } from './utils';
 
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxgFwo8v3SsWJPcIpSM-3_WVjMuLecc5RuUNwWVQPpUscTPHm_DO5raBJ22YIddIjgfKw/exec";
-
-// Helper to clean any HTML entities (&gt;, &lt;)
-const decodeSymbols = (str: string) => {
-  if (!str) return '';
-  return str.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-};
-
-interface ChecklistItem {
-  id: string;
-  groupKey: 'W' | 'H' | 'A' | 'P' | 'O' | 'S';
-  groupTitle: string;
-  text: string;
-  status: 'complied' | 'not_complied' | 'pending';
-}
-
-interface WeaningSurveyItem {
-  id: string;
-  category: number;
-  categoryTitle: string;
-  text: string;
-  status: 'complied' | 'not_complied' | 'pending';
-  note: string;
-}
-
-interface Patient {
-  id: string;
-  bed: string;
-  hn: string;
-  name: string;
-  gender: string;
-  age: number;
-  ventDay: number;
-  risk?: 'ต่ำ' | 'ปานกลาง' | 'สูง';
-  checklists: {
-    morning: ChecklistItem[];
-    afternoon: ChecklistItem[];
-    night: ChecklistItem[];
-  };
-  weaningSurveys: {
-    morning: WeaningSurveyItem[];
-    afternoon: WeaningSurveyItem[];
-    night: WeaningSurveyItem[];
-  };
-  progresses: {
-    morning: number;
-    afternoon: number;
-    night: number;
-  };
-  lastAssessedBy?: string;
-  lastAssessedShift?: string;
-  lastAssessedTime?: string;
-}
-
-const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
-  // W - WEAN การหย่าเครื่องช่วยหายใจ
-  { id: 'w-1', groupKey: 'W', groupTitle: 'W - WEAN การหย่าเครื่องช่วยหายใจ', text: 'ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน', status: 'pending' },
-  { id: 'w-2', groupKey: 'W', groupTitle: 'W - WEAN การหย่าเครื่องช่วยหายใจ', text: 'ใช้ weaning protocol', status: 'pending' },
-
-  // H - HAND HYGIENE การทำความสะอาดมือ
-  { id: 'h-1', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 7 ขั้นตอน', status: 'pending' },
-  { id: 'h-2', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 5 moments', status: 'pending' },
-
-  // A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก
-  { id: 'a-1', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ยกหัวเตียงสูง 30-45 องศา', status: 'pending' },
-  { id: 'a-2', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'วัด cuff pressure 30-35 cmH2O ทุกเวร', status: 'pending' },
-  { id: 'a-3', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ประเมิน NG ก่อน feeds', status: 'pending' },
-  { id: 'a-4', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.', status: 'pending' },
-
-  // P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน
-  { id: 'p-1', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย', status: 'pending' },
-  { id: 'p-2', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เทน้ำทิ้งสาย circuit ด้วย aseptic technique', status: 'pending' },
-  { id: 'p-3', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'ดูดเสมหะเท่าที่จำเป็น', status: 'pending' },
-
-  // O - ORAL CARE การทำความสะอาดช่องปาก
-  { id: 'o-1', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง', status: 'pending' },
-  { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ >1,500 ppm', status: 'pending' },
-  { id: 'o-3', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน', status: 'pending' },
-
-  // S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง
-  { id: 's-1', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า', status: 'pending' },
-  { id: 's-2', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ลดปริมาณการใช้ และหยุดยานอนหลับ', status: 'pending' },
-  { id: 's-3', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: '(ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)', status: 'pending' }
-];
-
-const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
-  // หมวดที่ 1
-  { id: 'w1-1', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.1 มีการประเมินภาวะที่ทำให้เกิดระบบหายใจล้มเหลวดีขึ้น', status: 'pending', note: '' },
-  { id: 'w1-2', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.2 ตรวจไม่มีภาวะขาดออกซิเจนครบ 3 ข้อ (PaO2/FiO2 ratio > 150 หรือ O2 sat > 92% ขณะใช้ FiO2 < 0.4, PEEP < 5 cmH2O, FiO2 < 0.4)', status: 'pending', note: '' },
-  { id: 'w1-3', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.3 ประเมินระบบไหลเวียนเลือดปกติ 2 ข้อ (ไม่มี active Myocardial Ischemia, BP > 90/60 ไม่ต้องใช้ Vasopressor drug หรือให้ Dopamine < 5 mcg/kg/min)', status: 'pending', note: '' },
-  { id: 'w1-4', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.4 ประเมินผู้ป่วยสามารถหายใจเองได้', status: 'pending', note: '' },
-  { id: 'w1-5', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.5 ประเมินภาวะ Electrolyte ปกติ', status: 'pending', note: '' },
-  { id: 'w1-6', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.6 ไม่มีไข้ > 38 °C', status: 'pending', note: '' },
-  { id: 'w1-7', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.7 การ Monitor P peak < 20 cmH2O', status: 'pending', note: '' },
-  { id: 'w1-8', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.8 ผู้ป่วยควรมี Hb > 7 gm%', status: 'pending', note: '' },
-
-  // หมวดที่ 2
-  { id: 'w2-1', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.1 อธิบายผู้ป่วยให้ฝึกหายใจ และดูแลอย่างใกล้ชิด', status: 'pending', note: '' },
-  { id: 'w2-2', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.2 จัดท่านั่ง หรือ ศีรษะสูง 70-90 °', status: 'pending', note: '' },
-  { id: 'w2-3', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.3 บันทึก BP, HR, RR, O2 sat. ก่อนทำ Short period SBT', status: 'pending', note: '' },
-  { id: 'w2-4', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.4 เปลี่ยน Mode Spontaneous โดยใช้ PEEP 5 cmH2O (CPAP 5 cmH2O) ไม่ต้องใช้ PS กรณีเป็น Bird Ventilator ให้ on T-piece 8l/m FiO2 0.4', status: 'pending', note: '' },
-  { id: 'w2-5', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.5 ประเมิน BP, HR, RR, O2 sat ลักษณะการหายใจ 5 นาที หลังเปลี่ยน Mode โดยยืนเฝ้าผู้ป่วยตลอดเวลา', status: 'pending', note: '' },
-  { id: 'w2-6', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.6 หยุด wean เมื่อพบว่า RR > 35/min or RR < 10/min, HR > 140/min or HR < 50/min, BP > 180/90 mmHg or BP < 90/60 mmHg, Oxygen saturation < 90% ผู้ป่วยกระสับกระส่าย ผู้ป่วยบอกให้ทราบว่าทนไม่ไหว', status: 'pending', note: '' },
-
-  // หมวดที่ 3
-  { id: 'w3-1', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.1 มีการต่อ T-piece 8L/M FiO2 0.4 (ถ้าเป็น T-piece ให้ทำต่อได้)', status: 'pending', note: '' },
-  { id: 'w3-2', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.2 มีการติดตามอาการทุก 15-30 นาที ตามเกณฑ์เฝ้าระวังข้อ 2', status: 'pending', note: '' },
-  { id: 'w3-3', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.3 หยุดการ wean เมื่อพบผิดปกติตามเกณฑ์ข้อ 2 แล้ว Back up setting เดิม', status: 'pending', note: '' },
-  { id: 'w3-4', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.4 ประเมินผู้ป่วยสามารถหายใจเองได้ครบ 120 นาที แล้วทดสอบว่าสามารถ Extubation ได้', status: 'pending', note: '' },
-
-  // หมวดที่ 4
-  { id: 'w4-1', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.1 GCS < 8 หรือผู้ป่วยไม่รู้สึกตัว และซึมมาก', status: 'pending', note: '' },
-  { id: 'w4-2', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.2 ผู้ป่วยมีเสมหะปริมาณมาก และไม่มีแรงไอขณะ suction', status: 'pending', note: '' },
-  { id: 'w4-3', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.3 เคยมีประวัติ secretion obstruction', status: 'pending', note: '' },
-  { id: 'w4-4', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.4 เคย Re intubation ภายใน 48 ชั่วโมงหลัง Extubation', status: 'pending', note: '' },
-  { id: 'w4-5', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.5 มีการแจ้งแพทย์ก่อน off tube', status: 'pending', note: '' }
-];
-
-const calculateProgress = (items: ChecklistItem[]) => {
-  if (!items || items.length === 0) return 0;
-  const compliedCount = items.filter(i => i.status === 'complied').length;
-  return Math.round((compliedCount / items.length) * 100);
-};
-
-const getRiskTier = (progress: number) => {
-  if (progress >= 80) {
-    return {
-      label: 'เสี่ยงน้อย',
-      badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
-      evalLevel: 'ระดับสูง / ดี / มาก (ผ่านเกณฑ์ระดับยอดเยี่ยม)',
-      isHighRisk: false
-    };
-  } else if (progress >= 60) {
-    return {
-      label: 'เสี่ยงปานกลาง',
-      badgeClass: 'bg-amber-100 text-amber-800 border border-amber-200',
-      evalLevel: 'ระดับปานกลาง (ผ่านเกณฑ์พื้นฐาน)',
-      isHighRisk: false
-    };
-  } else {
-    return {
-      label: 'เสี่ยงมาก',
-      badgeClass: 'bg-rose-100 text-rose-800 border border-rose-200',
-      evalLevel: 'ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)',
-      isHighRisk: true
-    };
-  }
-};
-
-const migratePatient = (p: any): Patient => {
-  const migrateList = (list: any[]) => {
-    if (!list) return DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i }));
-    return list.map(i => {
-      let status = i.status;
-      if (!status) {
-        status = i.checked ? 'complied' : 'pending';
-      }
-      return {
-        id: i.id || ('item-' + Math.random()),
-        groupKey: i.groupKey || 'W',
-        groupTitle: decodeSymbols(i.groupTitle || 'W - WEAN การหย่าเครื่องช่วยหายใจ'),
-        text: decodeSymbols(i.text || ''),
-        status: (status as 'complied' | 'not_complied' | 'pending') || 'pending'
-      };
-    });
-  };
-
-  const migrateSurvey = (list: any[]) => {
-    if (!list) return DEFAULT_WEANING_SURVEY.map(i => ({ ...i }));
-    return list.map(i => ({
-      id: i.id || ('ws-' + Math.random()),
-      category: i.category || 1,
-      categoryTitle: decodeSymbols(i.categoryTitle || 'หมวดที่ 1'),
-      text: decodeSymbols(i.text || ''),
-      status: (i.status as 'complied' | 'not_complied' | 'pending') || 'pending',
-      note: i.note || ''
-    }));
-  };
-
-  const checklists = p.checklists ? {
-    morning: migrateList(p.checklists.morning),
-    afternoon: migrateList(p.checklists.afternoon),
-    night: migrateList(p.checklists.night)
-  } : {
-    morning: migrateList(p.checklist),
-    afternoon: migrateList(p.checklist),
-    night: migrateList(p.checklist)
-  };
-
-  const weaningSurveys = p.weaningSurveys ? {
-    morning: migrateSurvey(p.weaningSurveys.morning),
-    afternoon: migrateSurvey(p.weaningSurveys.afternoon),
-    night: migrateSurvey(p.weaningSurveys.night)
-  } : {
-    morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-    afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-    night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
-  };
-
-  const progresses = p.progresses || {
-    morning: calculateProgress(checklists.morning),
-    afternoon: calculateProgress(checklists.afternoon),
-    night: calculateProgress(checklists.night)
-  };
-
-  return {
-    ...p,
-    checklists,
-    weaningSurveys,
-    progresses,
-    lastAssessedBy: p.lastAssessedBy || 'พว.กานดา',
-    lastAssessedShift: p.lastAssessedShift || 'เวรเช้า',
-    lastAssessedTime: p.lastAssessedTime || '08:30 น.'
-  };
-};
+type Tab = 'home' | 'beds' | 'guide';
+type BedFilter = 'all' | 'vent' | 'high_risk';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'home' | 'beds' | 'guide'>('home');
+  const [currentTab, setCurrentTab] = useState<Tab>('home');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
-  const [bedFilter, setBedFilter] = useState<'all' | 'vent' | 'high_risk'>('all');
-  
-  // Modals & States
+  const [bedFilter, setBedFilter] = useState<BedFilter>('all');
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showNurseModal, setShowNurseModal] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<'bundle' | 'notes'>('bundle');
-  const [activeChecklistShift, setActiveChecklistShift] = useState<'morning' | 'afternoon' | 'night'>('morning');
-  const [copiedNote, setCopiedNote] = useState(false);
-  const [showWeaningProtocolSurvey, setShowWeaningProtocolSurvey] = useState(false);
 
-  // Active Nurse & Shift States
-  const [activeShift, setActiveShift] = useState<'เวรเช้า' | 'เวรบ่าย' | 'เวรดึก'>(() => {
-    try {
-      return (localStorage.getItem('vap_active_shift') as any) || 'เวรเช้า';
-    } catch {
-      return 'เวรเช้า';
-    }
-  });
+  // ผู้ประเมิน / เวร / URL ของ Sheets จำไว้ใน localStorage
+  const [activeShift, setActiveShift] = useLocalStorageState<ShiftLabel>(
+    STORAGE_KEYS.shift,
+    'เวรเช้า',
+    v => v in SHIFT_BY_LABEL
+  );
+  const [nurseName, setNurseName] = useLocalStorageState<string>(STORAGE_KEYS.nurse, DEFAULT_NURSE_NAME);
+  const [sheetUrl, setSheetUrl] = useLocalStorageState<string>(STORAGE_KEYS.sheetUrl, DEFAULT_GOOGLE_SHEET_URL);
 
-  const [nurseName, setNurseName] = useState<string>(() => {
-    try {
-      return localStorage.getItem('vap_nurse_name') || 'พว.กานดา';
-    } catch {
-      return 'พว.กานดา';
-    }
-  });
-
+  const [activeChecklistShift, setActiveChecklistShift] = useState<Shift>(SHIFT_BY_LABEL[activeShift]);
   useEffect(() => {
-    if (activeShift === 'เวรเช้า') setActiveChecklistShift('morning');
-    else if (activeShift === 'เวรบ่าย') setActiveChecklistShift('afternoon');
-    else setActiveChecklistShift('night');
+    setActiveChecklistShift(SHIFT_BY_LABEL[activeShift]);
   }, [activeShift]);
 
+  const {
+    patients,
+    status,
+    refresh,
+    toggleChecklistItem,
+    toggleWeaningItem,
+    setWeaningNote,
+    addPatient,
+    removePatient
+  } = usePatients(sheetUrl);
+  const isSyncing = status.syncing;
+  const isSheetConnected = status.connected;
+
+  const assessor = useMemo<Assessor>(() => ({ name: nurseName, shiftLabel: activeShift }), [nurseName, activeShift]);
+
+  const selectedPatient = useMemo(
+    () => patients.find(p => p.id === selectedPatientId),
+    [patients, selectedPatientId]
+  );
+
+  // ผู้ป่วยที่เปิดอยู่ถูกลบ (จากเครื่องอื่น) → กลับหน้ารายการ แทนที่จะเหลือหน้าจอว่าง
   useEffect(() => {
-    try {
-      localStorage.setItem('vap_active_shift', activeShift);
-      localStorage.setItem('vap_nurse_name', nurseName);
-    } catch {}
-  }, [activeShift, nurseName]);
+    if (selectedPatientId && !selectedPatient) setSelectedPatientId(null);
+  }, [selectedPatientId, selectedPatient]);
 
-  // Google Sheets Web App URL State
-  const [sheetUrlInput, setSheetUrlInput] = useState<string>(() => {
-    try {
-      return localStorage.getItem('vap_google_sheet_url') || DEFAULT_GOOGLE_SHEET_URL;
-    } catch {
-      return DEFAULT_GOOGLE_SHEET_URL;
-    }
-  });
-  const [isSheetConnected, setIsSheetConnected] = useState<boolean>(true);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [cloudStatusMsg, setCloudStatusMsg] = useState<string>('เชื่อมต่อ Google Sheets แล้ว');
-
-  // Patients State - initialized strictly as empty array []
-  const [patients, setPatients] = useState<Patient[]>([]);
-
-  // Fetch all patients from Google Sheets
-  const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput) => {
-    if (!targetUrl.trim()) {
-      setIsSheetConnected(false);
-      setCloudStatusMsg('ยังไม่ได้ใส่ URL (ใช้ Local)');
-      return;
-    }
-
-    setIsSyncing(true);
-    setCloudStatusMsg('กำลังดึงข้อมูลจาก Sheets...');
-    try {
-      const response = await fetch(targetUrl.trim());
-      if (!response.ok) throw new Error('Network response was not ok');
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        const migrated = data.map(migratePatient);
-        migrated.sort((a, b) => a.bed.localeCompare(b.bed));
-        setPatients(migrated);
-        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migrated));
-        setIsSheetConnected(true);
-        setCloudStatusMsg('ซิงค์ Google Sheets สำเร็จ');
-      }
-    } catch (err) {
-      console.error('Error fetching from Google Sheets:', err);
-      setIsSheetConnected(false);
-      setCloudStatusMsg('เชื่อมต่อ Sheets ไม่สำเร็จ (ใช้ข้อมูลสำรอง)');
-      try {
-        const saved = localStorage.getItem('vap_ward_patients_f3');
-        if (saved) setPatients(JSON.parse(saved).map(migratePatient));
-      } catch {}
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Load data on startup & poll every 15 seconds for multi-device sync
-  useEffect(() => {
-    fetchFromGoogleSheets(sheetUrlInput);
-    const interval = setInterval(() => {
-      if (sheetUrlInput.trim()) {
-        fetch(sheetUrlInput.trim())
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              const migrated = data.map(migratePatient);
-              migrated.sort((a, b) => a.bed.localeCompare(b.bed));
-              setPatients(migrated);
-              setIsSheetConnected(true);
-              setCloudStatusMsg('ซิงค์ Google Sheets สำเร็จ');
-            }
-          })
-          .catch(() => {});
-      }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [sheetUrlInput]);
-
-  // Send single patient upsert or delete to Google Sheets
-  const syncSinglePatientToSheet = async (action: 'upsert' | 'delete', patient?: Patient, patientId?: string) => {
-    if (!sheetUrlInput.trim()) return;
-    setIsSyncing(true);
-    setCloudStatusMsg('กำลังบันทึกลง Sheets...');
-    try {
-      await fetch(sheetUrlInput.trim(), {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          action,
-          patient,
-          patientId: patientId || patient?.id
-        })
-      });
-      setIsSheetConnected(true);
-      setCloudStatusMsg('บันทึกลง Google Sheets แล้ว');
-    } catch (e) {
-      console.error('Error syncing to Google Sheets:', e);
-      setCloudStatusMsg('ส่งข้อมูลไป Sheets ขัดข้อง');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const selectedPatient = patients.find(p => p.id === selectedPatientId);
-
-  // Update WHAPO Checklist Item Status
-  const updateItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
-    const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
-    let updatedTarget: Patient | undefined;
-
-    const updated = patients.map(p => {
-      if (p.id !== patientId) return p;
-      const shiftItems = p.checklists[shiftKey].map(item => {
-        if (item.id === itemId) {
-          const toggled: 'complied' | 'not_complied' | 'pending' = item.status === newStatus ? 'pending' : newStatus;
-          return { ...item, status: toggled };
-        }
-        return item;
-      });
-
-      const newProg = calculateProgress(shiftItems);
-      if (newProg === 100) {
-        try { confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } }); } catch {}
-      }
-
-      updatedTarget = {
-        ...p,
-        checklists: {
-          ...p.checklists,
-          [shiftKey]: shiftItems
-        },
-        progresses: {
-          ...p.progresses,
-          [shiftKey]: newProg
-        },
-        lastAssessedBy: nurseName,
-        lastAssessedShift: activeShift,
-        lastAssessedTime: timeNow
-      };
-      return updatedTarget;
-    });
-
-    setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      syncSinglePatientToSheet('upsert', updatedTarget);
-    }
-  };
-
-  // Update Weaning Protocol Survey Item Status
-  const updateWeaningItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
-    const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
-    let updatedTarget: Patient | undefined;
-
-    const updated = patients.map(p => {
-      if (p.id !== patientId) return p;
-      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
-        if (item.id === itemId) {
-          const toggled: 'complied' | 'not_complied' | 'pending' = item.status === newStatus ? 'pending' : newStatus;
-          return { ...item, status: toggled };
-        }
-        return item;
-      });
-
-      updatedTarget = {
-        ...p,
-        weaningSurveys: {
-          ...p.weaningSurveys,
-          [shiftKey]: surveyItems
-        },
-        lastAssessedBy: nurseName,
-        lastAssessedShift: activeShift,
-        lastAssessedTime: timeNow
-      };
-      return updatedTarget;
-    });
-
-    setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      syncSinglePatientToSheet('upsert', updatedTarget);
-    }
-  };
-
-  // Update Weaning Protocol Survey Item Note
-  const updateWeaningItemNote = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, noteText: string) => {
-    let updatedTarget: Patient | undefined;
-
-    const updated = patients.map(p => {
-      if (p.id !== patientId) return p;
-      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
-        if (item.id === itemId) {
-          return { ...item, note: noteText };
-        }
-        return item;
-      });
-
-      updatedTarget = {
-        ...p,
-        weaningSurveys: {
-          ...p.weaningSurveys,
-          [shiftKey]: surveyItems
-        }
-      };
-      return updatedTarget;
-    });
-
-    setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      syncSinglePatientToSheet('upsert', updatedTarget);
-    }
-  };
-
-  // Delete patient
-  const handleDeletePatient = async (patientId: string) => {
-    const updated = patients.filter(p => p.id !== patientId);
-    setPatients(updated);
-    setDeleteConfirmId(null);
-    if (selectedPatientId === patientId) {
-      setSelectedPatientId(null);
-    }
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    await syncSinglePatientToSheet('delete', undefined, patientId);
-  };
-
-  // New patient form state
-  const [newBed, setNewBed] = useState('B01');
-  const [newName, setNewName] = useState('');
-  const [newHn, setNewHn] = useState('');
-  const [newAge, setNewAge] = useState('60');
-  const [newVentDay, setNewVentDay] = useState('1');
-
-  // Add patient handler
-  const handleAddPatient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim() || !newHn.trim()) {
-      alert('กรุณากรอกชื่อและเลข HN ให้ครบถ้วน');
-      return;
-    }
-    const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
-    const newPt: Patient = {
-      id: 'p-' + Date.now(),
-      bed: newBed.trim().toUpperCase(),
-      hn: newHn.trim(),
-      name: newName.trim(),
-      gender: 'หญิง',
-      age: parseInt(newAge) || 60,
-      ventDay: parseInt(newVentDay) || 1,
-      checklists: {
-        morning: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'pending' })),
-        afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'pending' })),
-        night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'pending' }))
-      },
-      weaningSurveys: {
-        morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' })),
-        afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' })),
-        night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' }))
-      },
-      progresses: { morning: 0, afternoon: 0, night: 0 },
-      lastAssessedBy: nurseName,
-      lastAssessedShift: activeShift,
-      lastAssessedTime: timeNow
+  const { highRiskCount, filteredPatients } = useMemo(() => {
+    const highRisk = patients.filter(p => getRiskTier(p.progresses?.[activeChecklistShift] ?? 0).isHighRisk);
+    return {
+      highRiskCount: highRisk.length,
+      filteredPatients: bedFilter === 'high_risk' ? highRisk : patients
     };
-
-    const updated = [newPt, ...patients].sort((a, b) => a.bed.localeCompare(b.bed));
-    setPatients(updated);
-    setShowAddModal(false);
-    setNewName('');
-    setNewHn('');
-
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    await syncSinglePatientToSheet('upsert', newPt);
-  };
-
-  // Copy Handover Note
-  const handleCopyNotes = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedNote(true);
-    setTimeout(() => setCopiedNote(false), 2000);
-  };
-
-  // Generate Handover Summary
-  const generateHandoverNote = (pt: Patient) => {
-    const shiftKey = activeChecklistShift;
-    const shiftName = shiftKey === 'morning' ? 'เวรเช้า' : shiftKey === 'afternoon' ? 'เวรบ่าย' : 'เวรดึก';
-    const shiftItems = pt.checklists[shiftKey] || DEFAULT_WHAPOS_CHECKLIST;
-    const shiftProg = pt.progresses[shiftKey] || 0;
-    const riskInfo = getRiskTier(shiftProg);
-    const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY;
-
-    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ] ${decodeSymbols(i.text)}`);
-    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ] ${decodeSymbols(i.text)}`);
-    const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ] ${decodeSymbols(i.text)}`);
-
-    const surveyComplied = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
-    const surveyNotComplied = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
-
-    return `[สรุปส่งเวร หอผู้ป่วยอายุรกรรมหญิง 3 (อญ.3)]
-ผู้ประเมิน: ${pt.lastAssessedBy || nurseName} (${pt.lastAssessedShift || shiftName}) เวลา ${pt.lastAssessedTime || '09:00 น.'}
-เตียง: ${pt.bed} | HN: ${pt.hn} | ${pt.name} (${pt.gender} ${pt.age} ปี)
-Ventilator Day: ${pt.ventDay} | Compliance (${shiftName}): ${shiftProg}%
-ประเมินความเสี่ยง VAP: [${riskInfo.label}] - ${riskInfo.evalLevel}
-
-รายการประเมิน WHAPO + S (${shiftName}):
-[ปฏิบัติ (${compliedItems.length})]:
-${compliedItems.length > 0 ? compliedItems.join('\n') : '  (ไม่มี)'}
-
-[ไม่ปฏิบัติ (${notCompliedItems.length})]:
-${notCompliedItems.length > 0 ? notCompliedItems.join('\n') : '  (ไม่มี)'}
-
-[รอดำเนินการ (${pendingItems.length})]:
-${pendingItems.length > 0 ? pendingItems.join('\n') : '  (ไม่มี)'}
-
---- แบบสำรวจ Weaning Protocol สำหรับพยาบาลวิชาชีพ ---
-[ปฏิบัติ (${surveyComplied.length})]:
-${surveyComplied.length > 0 ? surveyComplied.join('\n') : '  (ไม่มี)'}
-
-[ไม่ปฏิบัติ/ยังไม่ประเมิน (${surveyNotComplied.length})]:
-${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่มี)'}
-
-ผู้บันทึก: ${pt.lastAssessedBy || nurseName}`;
-  };
-
-  // Filter calculations
+  }, [patients, activeChecklistShift, bedFilter]);
   const totalCount = patients.length;
-  const ventCount = patients.length;
-  const highRiskCount = patients.filter(p => {
-    const prog = p.progresses?.[activeChecklistShift] ?? 0;
-    return getRiskTier(prog).isHighRisk;
-  }).length;
+  const ventCount = totalCount;
 
-  const filteredPatients = patients.filter(p => {
-    const prog = p.progresses?.[activeChecklistShift] ?? 0;
-    const tier = getRiskTier(prog);
-    if (bedFilter === 'vent') return true;
-    if (bedFilter === 'high_risk') return tier.isHighRisk;
-    return true;
-  });
+  const handleAddPatient = useCallback(
+    (input: NewPatientInput) => {
+      addPatient(input, assessor);
+      setShowAddModal(false);
+    },
+    [addPatient, assessor]
+  );
+
+  const handleDeletePatient = useCallback(
+    (id: string) => {
+      removePatient(id);
+      setDeleteConfirmId(null);
+      setSelectedPatientId(prev => (prev === id ? null : prev));
+    },
+    [removePatient]
+  );
+
+  const handleSaveSheetUrl = useCallback(
+    (url: string) => {
+      const next = url.trim();
+      setShowCloudModal(false);
+      if (next === sheetUrl) void refresh(); // URL เดิม → แค่ซิงค์ใหม่
+      else setSheetUrl(next); // URL ใหม่ → usePatients จะโหลดเองอัตโนมัติ
+    },
+    [sheetUrl, setSheetUrl, refresh]
+  );
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-slate-300 p-0 sm:py-6 sm:px-4 font-sans">
+    <div className="flex justify-center items-center min-h-dvh bg-slate-300 p-0 sm:py-6 sm:px-4 font-sans">
       {/* Mobile App Container */}
-      <div className="w-full sm:max-w-[430px] h-[100vh] sm:h-[880px] bg-[#F0FDFA] shadow-2xl sm:rounded-[40px] flex flex-col overflow-hidden relative border border-slate-300">
-        
+      <div className="w-full sm:max-w-[430px] h-dvh sm:h-[880px] bg-[#F0FDFA] shadow-2xl sm:rounded-[40px] flex flex-col overflow-hidden relative border border-slate-300">
+
         {/* Top Header */}
         <header className="bg-teal-700 text-white px-5 pt-3 pb-2.5 flex flex-col gap-2 shadow-md flex-shrink-0 z-20">
           <div className="flex items-center justify-between">
@@ -652,10 +139,11 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
             {/* Google Sheets Sync Status & Refresh Button */}
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => fetchFromGoogleSheets(sheetUrlInput)}
+                onClick={() => refresh()}
                 disabled={isSyncing}
                 className="p-1 rounded-full bg-teal-800 hover:bg-teal-600 text-teal-100 transition-colors"
                 title="รีเฟรชข้อมูลจาก Google Sheets"
+                aria-label="รีเฟรชข้อมูลจาก Google Sheets"
               >
                 <RefreshCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               </button>
@@ -692,7 +180,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
         {/* Main Body View */}
         <div className="flex-1 overflow-y-auto pb-24 pt-4 px-4 bg-[#F0FDFA]">
-          
+
           {/* ================= 1. HOME SCREEN ================= */}
           {currentTab === 'home' && !selectedPatientId && (
             <div className="space-y-4 font-sarabun">
@@ -817,78 +305,16 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     {isSyncing ? 'กำลังโหลดข้อมูลจาก Google Sheets...' : 'ยังไม่มีข้อมูลผู้ป่วยในขณะนี้ (สามารถกดปุ่ม "+ เพิ่มผู้ป่วย" ด้านบนได้ทันที)'}
                   </div>
                 ) : (
-                  filteredPatients.map((patient) => {
-                    const shiftProgKey = activeChecklistShift;
-                    const currentProg = patient.progresses?.[shiftProgKey] ?? 0;
-                    const riskTier = getRiskTier(currentProg);
-                    
-                    return (
-                      <div 
-                        key={patient.id}
-                        onClick={() => setSelectedPatientId(patient.id)}
-                        className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer shadow-sm hover:shadow-md relative overflow-hidden ${
-                          riskTier.isHighRisk ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/30' : 'border-teal-100'
-                        }`}
-                      >
-                        {/* Delete Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmId(patient.id);
-                          }}
-                          className="absolute top-3 right-3 w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors z-10"
-                          title="ลบเตียง"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-
-                        <div className="flex items-start justify-between pr-8">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm font-prompt ${
-                              riskTier.isHighRisk ? 'bg-rose-100 text-rose-700' : 'bg-teal-100 text-teal-700'
-                            }`}>
-                              {patient.bed}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-sm font-bold font-prompt text-slate-800">{patient.name}</h3>
-                                <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
-                                  {riskTier.label} ({currentProg}%)
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                HN: {patient.hn} | {patient.gender} {patient.age} ปี | <span className="font-semibold text-teal-700">Ventilator Day {patient.ventDay}</span>
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Progress bar inside card & Assessor Info */}
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
-                              <span>WHAPO + S Score ({activeShift})</span>
-                              <span className={currentProg >= 80 ? 'text-emerald-600' : currentProg >= 60 ? 'text-amber-600' : 'text-rose-600'}>
-                                {currentProg}% ({riskTier.evalLevel.split(' ')[0]})
-                              </span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full transition-all ${
-                                  currentProg >= 80 ? 'bg-emerald-500' : currentProg >= 60 ? 'bg-amber-500' : 'bg-rose-500'
-                                }`}
-                                style={{ width: `${currentProg}%` }}
-                              />
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <span className="text-[10px] text-teal-800 font-semibold block">{patient.lastAssessedBy || 'พว.กานดา'} ({patient.lastAssessedShift || 'เวรเช้า'})</span>
-                            <span className="text-[10px] text-slate-500">เวลา {patient.lastAssessedTime || '08:30 น.'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
+                  filteredPatients.map(patient => (
+                    <PatientCard
+                      key={patient.id}
+                      patient={patient}
+                      shift={activeChecklistShift}
+                      activeShift={activeShift}
+                      onOpen={setSelectedPatientId}
+                      onDelete={setDeleteConfirmId}
+                    />
+                  ))
                 )}
               </div>
 
@@ -896,467 +322,23 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           )}
 
           {/* ================= 3. PATIENT DETAIL & WHAPO + S ASSESSMENT SCREEN ================= */}
-          {selectedPatientId && selectedPatient && (() => {
-            const currentProg = selectedPatient.progresses?.[activeChecklistShift] ?? 0;
-            const riskTier = getRiskTier(currentProg);
-
-            return (
-              <div className="space-y-4 font-sarabun">
-                {/* Top Bar with Back & Delete */}
-                <div className="flex items-center justify-between">
-                  <button 
-                    onClick={() => setSelectedPatientId(null)}
-                    className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-teal-700 hover:text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200"
-                  >
-                    <ArrowLeft className="w-4 h-4" /> กลับ
-                  </button>
-                  <button 
-                    onClick={() => setDeleteConfirmId(selectedPatient.id)}
-                    className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" /> ลบเตียงนี้
-                  </button>
-                </div>
-
-                {/* Patient Header Card */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold font-prompt bg-teal-700 text-white px-2 py-0.5 rounded-md">
-                          {selectedPatient.bed} (อญ.3)
-                        </span>
-                        <span className="text-xs text-slate-500">HN: {selectedPatient.hn}</span>
-                      </div>
-                      <h2 className="text-base font-bold font-prompt text-slate-800 mt-1">{selectedPatient.name}</h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {selectedPatient.gender} {selectedPatient.age} ปี | Ventilator Day {selectedPatient.ventDay}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Prominent Dynamic Risk & Evaluation Banner */}
-                  <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
-                    currentProg >= 80 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' :
-                    currentProg >= 60 ? 'bg-amber-50 border-amber-300 text-amber-950' :
-                    'bg-rose-50 border-rose-300 text-rose-950'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm font-prompt flex-shrink-0 ${
-                        currentProg >= 80 ? 'bg-emerald-200 text-emerald-800' :
-                        currentProg >= 60 ? 'bg-amber-200 text-amber-800' :
-                        'bg-rose-200 text-rose-800'
-                      }`}>
-                        {currentProg}%
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold font-prompt">ประเมินความเสี่ยง VAP:</span>
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
-                            {riskTier.label}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-sarabun mt-1 font-semibold opacity-90">
-                          {riskTier.evalLevel}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sub-tabs */}
-                <div className="flex bg-teal-100/60 p-1 rounded-2xl">
-                  <button
-                    onClick={() => setSubTab('bundle')}
-                    className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
-                      subTab === 'bundle' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    ประเมิน WHAPO + S ({currentProg}%)
-                  </button>
-                  <button
-                    onClick={() => setSubTab('notes')}
-                    className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
-                      subTab === 'notes' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    สรุปส่งเวร
-                  </button>
-                </div>
-
-                {/* Subtab 1: WHAPO + S Assessment Screen */}
-                {subTab === 'bundle' && (
-                  <div className="space-y-4">
-                    {/* Shift Selector Tabs */}
-                    <div className="flex bg-white p-1.5 rounded-2xl border border-teal-200 shadow-xs gap-1">
-                      <button
-                        onClick={() => setActiveChecklistShift('morning')}
-                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
-                          activeChecklistShift === 'morning' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
-                        }`}
-                      >
-                        <Sun className="w-3.5 h-3.5" /> เวรเช้า ({selectedPatient.progresses?.morning ?? 0}%)
-                      </button>
-                      <button
-                        onClick={() => setActiveChecklistShift('afternoon')}
-                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
-                          activeChecklistShift === 'afternoon' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
-                        }`}
-                      >
-                        <Sunset className="w-3.5 h-3.5" /> เวรบ่าย ({selectedPatient.progresses?.afternoon ?? 0}%)
-                      </button>
-                      <button
-                        onClick={() => setActiveChecklistShift('night')}
-                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
-                          activeChecklistShift === 'night' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
-                        }`}
-                      >
-                        <Moon className="w-3.5 h-3.5" /> เวรดึก ({selectedPatient.progresses?.night ?? 0}%)
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between px-1">
-                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider font-prompt">
-                        WHAPO + S Bundle ({activeChecklistShift === 'morning' ? 'เวรเช้า' : activeChecklistShift === 'afternoon' ? 'เวรบ่าย' : 'เวรดึก'})
-                      </h3>
-                      <span className="text-xs font-semibold text-teal-700">
-                        ผู้ประเมิน: {selectedPatient.lastAssessedBy || nurseName}
-                      </span>
-                    </div>
-
-                    {(['W', 'H', 'A', 'P', 'O', 'S'] as const).map(groupKey => {
-                      const shiftItems = selectedPatient.checklists?.[activeChecklistShift] || DEFAULT_WHAPOS_CHECKLIST;
-                      const groupItems = shiftItems.filter(i => i.groupKey === groupKey);
-                      if (groupItems.length === 0) return null;
-                      const groupTitle = decodeSymbols(groupItems[0].groupTitle);
-                      const groupCompliedCount = groupItems.filter(i => i.status === 'complied').length;
-
-                      return (
-                        <div key={groupKey} className="bg-white rounded-2xl p-3.5 border border-teal-100 shadow-sm space-y-2.5">
-                          <div className="flex items-center justify-between border-b border-teal-50 pb-2">
-                            <h4 className="text-xs font-bold font-prompt text-teal-800 flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-extrabold">
-                                {groupKey}
-                              </span>
-                              {groupTitle}
-                            </h4>
-                            <span className="text-[11px] text-slate-500">
-                              ปฏิบัติแล้ว {groupCompliedCount}/{groupItems.length}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2.5">
-                            {groupItems.map(item => {
-                              const isComplied = item.status === 'complied';
-                              const isNotComplied = item.status === 'not_complied';
-                              const cleanText = decodeSymbols(item.text);
-
-                              return (
-                                <React.Fragment key={item.id}>
-                                  <div 
-                                    className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                                      isComplied ? 'bg-emerald-50/40 border-emerald-300' :
-                                      isNotComplied ? 'bg-rose-50/40 border-rose-300' :
-                                      'bg-slate-50/60 border-slate-200'
-                                    }`}
-                                  >
-                                    <div className="flex-1">
-                                      <p className="text-xs font-sarabun font-medium text-slate-800 leading-relaxed">
-                                        {cleanText}
-                                      </p>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                                      <button
-                                        onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'complied')}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
-                                          isComplied 
-                                            ? 'bg-[#10B981] text-white shadow-sm ring-2 ring-emerald-200' 
-                                            : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
-                                        }`}
-                                      >
-                                        <Check className="w-3.5 h-3.5" /> ปฏิบัติ
-                                      </button>
-
-                                      <button
-                                        onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'not_complied')}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
-                                          isNotComplied 
-                                            ? 'bg-[#EF4444] text-white shadow-sm ring-2 ring-rose-200' 
-                                            : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
-                                        }`}
-                                      >
-                                        <X className="w-3.5 h-3.5" /> ไม่ปฏิบัติ
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {cleanText === 'ใช้ weaning protocol' && (
-                                    <div className="mt-2 ml-2 sm:ml-4 border-l-2 border-teal-500 pl-3 space-y-2">
-                                      <button
-                                        onClick={() => setShowWeaningProtocolSurvey(prev => !prev)}
-                                        className="w-full bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-prompt font-semibold py-2.5 px-3 rounded-xl flex items-center justify-between transition-colors shadow-xs"
-                                      >
-                                        <span className="flex items-center gap-2">
-                                          <FileText className="w-4 h-4 text-teal-600" />
-                                          📋 แบบสำรวจการใช้ Weaning Protocol สำหรับพยาบาลวิชาชีพ
-                                        </span>
-                                        {showWeaningProtocolSurvey ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                      </button>
-
-                                      {showWeaningProtocolSurvey && (
-                                        <div className="bg-slate-50 border border-teal-200 rounded-2xl p-3.5 space-y-4 animate-in fade-in duration-200">
-                                          <div className="text-xs font-bold text-teal-900 font-prompt border-b border-teal-100 pb-1.5">
-                                            แบบสำรวจการใช้ Weaning Protocol (4 หมวด)
-                                          </div>
-
-                                          {[1, 2, 3, 4].map(catNum => {
-                                            const surveyList = selectedPatient.weaningSurveys?.[activeChecklistShift] || DEFAULT_WEANING_SURVEY;
-                                            const catItems = surveyList.filter(s => s.category === catNum);
-                                            if (catItems.length === 0) return null;
-                                            const catTitle = decodeSymbols(catItems[0].categoryTitle);
-
-                                            return (
-                                              <div key={catNum} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                                                <h5 className="text-[11px] font-bold font-prompt text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg">
-                                                  {catTitle}
-                                                </h5>
-
-                                                <div className="space-y-3 pt-1">
-                                                  {catItems.map(surveyItem => {
-                                                    const sComplied = surveyItem.status === 'complied';
-                                                    const sNotComplied = surveyItem.status === 'not_complied';
-                                                    const cleanSurveyText = decodeSymbols(surveyItem.text);
-
-                                                    return (
-                                                      <div key={surveyItem.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                                          <p className="text-[11px] font-sarabun font-medium text-slate-800 flex-1 leading-relaxed">
-                                                            {cleanSurveyText}
-                                                          </p>
-                                                          <div className="flex items-center gap-1 flex-shrink-0">
-                                                            <button
-                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
-                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sComplied ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
-                                                              }`}
-                                                            >
-                                                              <Check className="w-3 h-3" /> ปฏิบัติ
-                                                            </button>
-                                                            <button
-                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
-                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sNotComplied ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
-                                                              }`}
-                                                            >
-                                                              <X className="w-3 h-3" /> ไม่ปฏิบัติ
-                                                            </button>
-                                                          </div>
-                                                        </div>
-
-                                                        <div>
-                                                          <input 
-                                                            type="text"
-                                                            value={surveyItem.note}
-                                                            onChange={e => updateWeaningItemNote(selectedPatient.id, activeChecklistShift, surveyItem.id, e.target.value)}
-                                                            placeholder="หมายเหตุ (ถ้ามี)..."
-                                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-teal-500 font-sarabun"
-                                                          />
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </React.Fragment>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Subtab 2: Notes & Shift Handover */}
-                {subTab === 'notes' && (
-                  <div className="bg-white rounded-2xl p-4 border border-teal-100 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold font-prompt text-slate-800">สรุปส่งเวรตาม WHAPO + S & Weaning Protocol (อญ.3)</h3>
-                      <button
-                        onClick={() => handleCopyNotes(generateHandoverNote(selectedPatient))}
-                        className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-prompt px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 border border-teal-200 transition-colors"
-                      >
-                        {copiedNote ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedNote ? 'คัดลอกแล้ว!' : 'คัดลอกข้อความส่งเวร'}
-                      </button>
-                    </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-sarabun whitespace-pre-line leading-relaxed">
-                      {generateHandoverNote(selectedPatient)}
-                    </div>
-                    <p className="text-[11px] text-slate-400">ข้อความสรุปส่งเวรแสดงคะแนน % ความเสี่ยงอัตโนมัติ และรายการ ปฏิบัติ / ไม่ปฏิบัติ ครบถ้วน</p>
-                  </div>
-                )}
-
-              </div>
-            );
-          })()}
+          {selectedPatient && (
+            <PatientDetail
+              key={selectedPatient.id}
+              selectedPatient={selectedPatient}
+              activeChecklistShift={activeChecklistShift}
+              nurseName={nurseName}
+              onShiftChange={setActiveChecklistShift}
+              onBack={() => setSelectedPatientId(null)}
+              onDelete={setDeleteConfirmId}
+              updateItemStatus={(pid, shift, itemId, st) => toggleChecklistItem(pid, shift, itemId, st, assessor)}
+              updateWeaningItemStatus={(pid, shift, itemId, st) => toggleWeaningItem(pid, shift, itemId, st, assessor)}
+              updateWeaningItemNote={setWeaningNote}
+            />
+          )}
 
           {/* ================= 4. WHAPOS REFERENCE GUIDE SCREEN ================= */}
-          {currentTab === 'guide' && (
-            <div className="space-y-4 font-sarabun">
-              <div>
-                <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Risk Tiers</h2>
-                <p className="text-xs text-slate-500">เกณฑ์การคำนวณระดับความเสี่ยงอัตโนมัติจากคะแนน % การปฏิบัติ</p>
-              </div>
-
-              {/* Risk Tiers Explanation Card */}
-              <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold font-prompt text-teal-800">📋 เกณฑ์การประเมินระดับความเสี่ยง VAP อัตโนมัติ</h3>
-                <div className="space-y-2 text-xs text-slate-700 font-sarabun">
-                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                    <div>
-                      <strong className="text-emerald-800 font-prompt">คะแนน ≥ 80% (เสี่ยงน้อย):</strong>
-                      <div className="text-[11px] text-emerald-700">ระดับสูง / ดี / มาก (ผ่านเกณฑ์ระดับยอดเยี่ยม)</div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">เสี่ยงน้อย</span>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
-                    <div>
-                      <strong className="text-amber-800 font-prompt">คะแนน 60 - 79% (เสี่ยงปานกลาง):</strong>
-                      <div className="text-[11px] text-amber-700">ระดับปานกลาง (ผ่านเกณฑ์พื้นฐาน)</div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">เสี่ยงปานกลาง</span>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between">
-                    <div>
-                      <strong className="text-rose-800 font-prompt">คะแนน &lt; 60% (เสี่ยงมาก):</strong>
-                      <div className="text-[11px] text-rose-700">ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)</div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">เสี่ยงมาก</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Accordion / Card List */}
-              <div className="space-y-3">
-                {/* W */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-2">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center font-prompt text-base">
-                      W
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">W - WEAN การหย่าเครื่องช่วยหายใจ</h4>
-                      <p className="text-[11px] text-slate-500">รวมแบบสำรวจ 4 หมวดสำหรับพยาบาลวิชาชีพ</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-cyan-600 font-sarabun">
-                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน</li>
-                    <li>ใช้ weaning protocol (มีแบบสำรวจละเอียด 4 หมวด)</li>
-                  </ul>
-                </div>
-
-                {/* H */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center font-prompt text-base">
-                      H
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">H - HAND HYGIENE การทำความสะอาดมือ</h4>
-                      <p className="text-[11px] text-slate-500">สุขอนามัยมือเคร่งครัด</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-emerald-600 font-sarabun">
-                    <li>ล้างมือ 7 ขั้นตอน</li>
-                    <li>ล้างมือ 5 moments</li>
-                  </ul>
-                </div>
-
-                {/* A */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center font-prompt text-base">
-                      A
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก</h4>
-                      <p className="text-[11px] text-slate-500">ลดความเสี่ยงการสำลักน้ำย่อย</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-amber-600 font-sarabun">
-                    <li>ยกหัวเตียงสูง 30-45 องศา</li>
-                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร</li>
-                    <li>ประเมิน NG ก่อน feeds</li>
-                    <li>ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.</li>
-                  </ul>
-                </div>
-
-                {/* P */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-800 font-bold flex items-center justify-center font-prompt text-base">
-                      P
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน</h4>
-                      <p className="text-[11px] text-slate-500">จัดการสาย circuit และอุปกรณ์</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-violet-600 font-sarabun">
-                    <li>เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย</li>
-                    <li>เทน้ำทิ้งสาย circuit ด้วย aseptic technique</li>
-                    <li>ดูดเสมหะเท่าที่จำเป็น</li>
-                  </ul>
-                </div>
-
-                {/* O */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-800 font-bold flex items-center justify-center font-prompt text-base">
-                      O
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">O - ORAL CARE การทำความสะอาดช่องปาก</h4>
-                      <p className="text-[11px] text-slate-500">ลดแบคทีเรียและ Biofilm ในช่องปาก</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-pink-600 font-sarabun">
-                    <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง</li>
-                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm</li>
-                    <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน</li>
-                  </ul>
-                </div>
-
-                {/* S */}
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-800 font-bold flex items-center justify-center font-prompt text-base">
-                      S
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง</h4>
-                      <p className="text-[11px] text-slate-500">ประเมินความตื่นตัวและลดขนาดยา</p>
-                    </div>
-                  </div>
-                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-indigo-600 font-sarabun">
-                    <li>ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า</li>
-                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ</li>
-                    <li>(ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          )}
+          {currentTab === 'guide' && !selectedPatientId && <GuideScreen />}
 
         </div>
 
@@ -1394,235 +376,30 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
         </nav>
 
         {/* ================= MODALS ================= */}
-
-        {/* 1. Add Patient Modal */}
-        {showAddModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold font-prompt text-slate-800">เพิ่มผู้ป่วยใหม่ (หอผู้ป่วย อญ.3)</h3>
-                <button onClick={() => setShowAddModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handleAddPatient} className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-slate-500 font-semibold mb-1">เลขเตียง (เช่น B01)</label>
-                  <input 
-                    type="text" 
-                    value={newBed}
-                    onChange={e => setNewBed(e.target.value)}
-                    required
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-500 font-semibold mb-1">ชื่อ-นามสกุลผู้ป่วย (หญิง)</label>
-                  <input 
-                    type="text" 
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    placeholder="เช่น นางสมใจ รักษาดี"
-                    required
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-500 font-semibold mb-1">เลข HN</label>
-                  <input 
-                    type="text" 
-                    value={newHn}
-                    onChange={e => setNewHn(e.target.value)}
-                    placeholder="เช่น 6701350"
-                    required
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-500 font-semibold mb-1">อายุ (ปี)</label>
-                    <input 
-                      type="number" 
-                      value={newAge}
-                      onChange={e => setNewAge(e.target.value)}
-                      required
-                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-500 font-semibold mb-1">Ventilator Day</label>
-                    <input 
-                      type="number" 
-                      value={newVentDay}
-                      onChange={e => setNewVentDay(e.target.value)}
-                      required
-                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
-                    />
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-sarabun leading-relaxed">
-                  ℹ️ <strong>ระดับความเสี่ยง:</strong> จะคำนวณและอัปเดตอัตโนมัติจากผลการประเมินคะแนน WHAPO+S Bundle ในระบบ
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-3 rounded-xl shadow-md transition-colors mt-2"
-                >
-                  บันทึกข้อมูลผู้ป่วยลง Sheets
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* 2. Nurse & Shift Selector Modal */}
+        {showAddModal && <AddPatientModal onClose={() => setShowAddModal(false)} onSubmit={handleAddPatient} />}
         {showNurseModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold font-prompt text-slate-800">ตั้งค่าผู้ประเมินและเวรปฏิบัติงาน</h3>
-                <button onClick={() => setShowNurseModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-slate-600 font-semibold mb-1 font-prompt">ชื่อพยาบาลผู้ประเมิน (Nurse Assessor):</label>
-                  <input 
-                    type="text"
-                    value={nurseName}
-                    onChange={e => setNurseName(e.target.value)}
-                    placeholder="เช่น พว.กานดา ใจดี"
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500 font-sarabun"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 font-semibold mb-1.5 font-prompt">เลือกเวรปฏิบัติงาน:</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveShift('เวรเช้า')}
-                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
-                        activeShift === 'เวรเช้า' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
-                      }`}
-                    >
-                      <Sun className="w-4 h-4" /> เวรเช้า
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveShift('เวรบ่าย')}
-                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
-                        activeShift === 'เวรบ่าย' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
-                      }`}
-                    >
-                      <Sunset className="w-4 h-4" /> เวรบ่าย
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveShift('เวรดึก')}
-                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
-                        activeShift === 'เวรดึก' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
-                      }`}
-                    >
-                      <Moon className="w-4 h-4" /> เวรดึก
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowNurseModal(false)}
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors mt-2"
-                >
-                  บันทึกข้อมูล
-                </button>
-              </div>
-            </div>
-          </div>
+          <NurseModal
+            nurseName={nurseName}
+            onNurseNameChange={setNurseName}
+            activeShift={activeShift}
+            onShiftChange={setActiveShift}
+            onClose={() => setShowNurseModal(false)}
+          />
         )}
-
-        {/* 3. Google Sheets Sync Setup Modal */}
         {showCloudModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold font-prompt text-slate-800">เชื่อมต่อฐานข้อมูล Google Sheets</h3>
-                <button onClick={() => setShowCloudModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <p className="text-slate-600 leading-relaxed">
-                  ข้อมูลผู้ป่วย ผลการประเมิน WHAPO + S และตารางสรุปผล <strong>Report_Summary</strong> จะถูกบันทึกและดึงข้อมูลจาก Google Sheets อัตโนมัติ
-                </p>
-
-                <div className="space-y-1">
-                  <label className="block text-slate-700 font-semibold font-prompt">Google Apps Script Web App URL:</label>
-                  <textarea 
-                    rows={3}
-                    value={sheetUrlInput}
-                    onChange={e => setSheetUrlInput(e.target.value)}
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-[11px] font-mono text-slate-800 focus:outline-none focus:border-teal-500"
-                  />
-                </div>
-
-                <div className={`p-2.5 rounded-xl text-[11px] font-semibold flex items-center gap-2 ${
-                  isSheetConnected ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
-                }`}>
-                  {isSheetConnected ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />}
-                  <span>สถานะ: {cloudStatusMsg}</span>
-                </div>
-
-                <div className="pt-2 flex gap-2">
-                  <button
-                    onClick={() => {
-                      localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
-                      fetchFromGoogleSheets(sheetUrlInput);
-                      setShowCloudModal(false);
-                    }}
-                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors"
-                  >
-                    บันทึกและซิงค์ข้อมูลทันที
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <CloudModal
+            sheetUrl={sheetUrl}
+            status={status}
+            onSave={handleSaveSheetUrl}
+            onClose={() => setShowCloudModal(false)}
+          />
         )}
-
-        {/* 4. Delete Confirmation Modal */}
         {deleteConfirmId && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
-              <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold font-prompt text-slate-800">ยืนยันการลบเตียง / จำหน่ายผู้ป่วย?</h3>
-              <p className="text-xs text-slate-500">
-                คุณต้องการลบข้อมูลเตียงนี้ออกจาก Google Sheets และระบบหอผู้ป่วย อญ.3 หรือไม่
-              </p>
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={() => handleDeletePatient(deleteConfirmId)}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
-                >
-                  ยืนยันลบ
-                </button>
-              </div>
-            </div>
-          </div>
+          <DeleteConfirmModal
+            onCancel={() => setDeleteConfirmId(null)}
+            onConfirm={() => handleDeletePatient(deleteConfirmId)}
+          />
         )}
-
       </div>
     </div>
   );

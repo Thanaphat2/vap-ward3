@@ -72,7 +72,7 @@ interface Patient {
   gender: string;
   age: number;
   ventDay: number;
-  risk?: 'ต่ำ' | 'ปานกลาง' | 'สูง'; // Legacy optional
+  risk?: 'ต่ำ' | 'ปานกลาง' | 'สูง';
   checklists: {
     morning: ChecklistItem[];
     afternoon: ChecklistItem[];
@@ -99,24 +99,24 @@ const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
   { id: 'w-2', groupKey: 'W', groupTitle: 'W - WEAN การหย่าเครื่องช่วยหายใจ', text: 'ใช้ weaning protocol', status: 'pending' },
 
   // H - HAND HYGIENE การทำความสะอาดมือ
-  { id: 'h-1', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 7 ขั้นตอน', status: 'complied' },
-  { id: 'h-2', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 5 moments', status: 'complied' },
+  { id: 'h-1', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 7 ขั้นตอน', status: 'pending' },
+  { id: 'h-2', groupKey: 'H', groupTitle: 'H - HAND HYGIENE การทำความสะอาดมือ', text: 'ล้างมือ 5 moments', status: 'pending' },
 
   // A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก
-  { id: 'a-1', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ยกหัวเตียงสูง 30-45 องศา', status: 'complied' },
+  { id: 'a-1', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ยกหัวเตียงสูง 30-45 องศา', status: 'pending' },
   { id: 'a-2', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'วัด cuff pressure 30-35 cmH2O ทุกเวร', status: 'pending' },
-  { id: 'a-3', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ประเมิน NG ก่อน feeds', status: 'complied' },
-  { id: 'a-4', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.', status: 'complied' },
+  { id: 'a-3', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ประเมิน NG ก่อน feeds', status: 'pending' },
+  { id: 'a-4', groupKey: 'A', groupTitle: 'A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก', text: 'ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.', status: 'pending' },
 
   // P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน
-  { id: 'p-1', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย', status: 'complied' },
-  { id: 'p-2', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เทน้ำทิ้งสาย circuit ด้วย aseptic technique', status: 'complied' },
-  { id: 'p-3', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'ดูดเสมหะเท่าที่จำเป็น', status: 'complied' },
+  { id: 'p-1', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย', status: 'pending' },
+  { id: 'p-2', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'เทน้ำทิ้งสาย circuit ด้วย aseptic technique', status: 'pending' },
+  { id: 'p-3', groupKey: 'P', groupTitle: 'P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน', text: 'ดูดเสมหะเท่าที่จำเป็น', status: 'pending' },
 
   // O - ORAL CARE การทำความสะอาดช่องปาก
-  { id: 'o-1', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง', status: 'complied' },
-  { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm', status: 'complied' },
-  { id: 'o-3', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน', status: 'complied' },
+  { id: 'o-1', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง', status: 'pending' },
+  { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm', status: 'pending' },
+  { id: 'o-3', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน', status: 'pending' },
 
   // S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง
   { id: 's-1', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า', status: 'pending' },
@@ -188,101 +188,6 @@ const getRiskTier = (progress: number) => {
     };
   }
 };
-
-const INITIAL_PATIENTS: Patient[] = [
-  {
-    id: 'p-01',
-    bed: 'B01',
-    hn: '6701201',
-    name: 'นางสมหญิง ใจดี',
-    gender: 'หญิง',
-    age: 58,
-    ventDay: 2,
-    checklists: {
-      morning: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' })),
-      afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' })),
-      night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' }))
-    },
-    weaningSurveys: {
-      morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'complied' })),
-      afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'complied' })),
-      night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'complied' }))
-    },
-    progresses: { morning: 100, afternoon: 100, night: 100 },
-    lastAssessedBy: 'พว.กานดา',
-    lastAssessedShift: 'เวรเช้า',
-    lastAssessedTime: '08:30 น.'
-  },
-  {
-    id: 'p-02',
-    bed: 'B02',
-    hn: '6701234',
-    name: 'นางสาวสมศรี มั่นคง',
-    gender: 'หญิง',
-    age: 65,
-    ventDay: 5,
-    checklists: {
-      morning: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'not_complied' })),
-      afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'not_complied' })),
-      night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'not_complied' }))
-    },
-    weaningSurveys: {
-      morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
-    },
-    progresses: { morning: 0, afternoon: 0, night: 0 },
-    lastAssessedBy: 'พว.สมใจ',
-    lastAssessedShift: 'เวรเช้า',
-    lastAssessedTime: '08:45 น.'
-  },
-  {
-    id: 'p-03',
-    bed: 'B03',
-    hn: '6701289',
-    name: 'นางสาวจันทรา สุขสวัสดิ์',
-    gender: 'หญิง',
-    age: 49,
-    ventDay: 3,
-    checklists: {
-      morning: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: i.groupKey !== 'S' ? 'complied' : 'pending' })),
-      afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: i.groupKey !== 'S' ? 'complied' : 'pending' })),
-      night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: i.groupKey !== 'S' ? 'complied' : 'pending' }))
-    },
-    weaningSurveys: {
-      morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
-    },
-    progresses: { morning: 80, afternoon: 80, night: 80 },
-    lastAssessedBy: 'พว.กานดา',
-    lastAssessedShift: 'เวรเช้า',
-    lastAssessedTime: '09:00 น.'
-  },
-  {
-    id: 'p-04',
-    bed: 'B04',
-    hn: '6701312',
-    name: 'นางวิไล สุวรรณโชติ',
-    gender: 'หญิง',
-    age: 72,
-    ventDay: 1,
-    checklists: {
-      morning: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' })),
-      afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' })),
-      night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'complied' }))
-    },
-    weaningSurveys: {
-      morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-      night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
-    },
-    progresses: { morning: 100, afternoon: 100, night: 100 },
-    lastAssessedBy: 'พว.สมใจ',
-    lastAssessedShift: 'เวรเช้า',
-    lastAssessedTime: '09:15 น.'
-  }
-];
 
 const DEFAULT_FIREBASE_CONFIG = JSON.stringify({
   apiKey: "AIzaSyDYttvG3BW_W3hcjUkBtybdUwfKy8sITFk",
@@ -422,17 +327,8 @@ export default function App() {
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState('กำลังตรวจสอบการเชื่อมต่อ...');
 
-  // Patients State
-  const [patients, setPatients] = useState<Patient[]>(() => {
-    try {
-      const saved = localStorage.getItem('vap_ward_patients_f3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.map(migratePatient);
-      }
-    } catch {}
-    return INITIAL_PATIENTS.map(migratePatient);
-  });
+  // Patients State - initialized strictly as empty array []
+  const [patients, setPatients] = useState<Patient[]>([]);
 
   // Firestore DB reference holder
   const [firestoreDb, setFirestoreDb] = useState<any>(null);
@@ -468,27 +364,17 @@ export default function App() {
     }
   }, [firebaseConfigInput]);
 
-  // Real-time listener (onSnapshot) or LocalStorage sync with automatic demo seeding
+  // Real-time listener (onSnapshot) - Strictly load from Firestore without ever re-seeding mock data
   useEffect(() => {
     if (firestoreDb) {
       const colRef = collection(firestoreDb, 'ward_patients_f3');
-      const unsubscribe = onSnapshot(colRef, async (snapshot) => {
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
         const cloudPatients: Patient[] = [];
         snapshot.forEach((docSnap) => {
           cloudPatients.push(migratePatient(docSnap.data()));
         });
-        if (cloudPatients.length > 0) {
-          cloudPatients.sort((a, b) => a.bed.localeCompare(b.bed));
-          setPatients(cloudPatients);
-        } else {
-          for (const pt of INITIAL_PATIENTS) {
-            try {
-              await setDoc(doc(firestoreDb, 'ward_patients_f3', pt.id), pt);
-            } catch (e) {
-              console.error('Error auto-seeding demo data:', e);
-            }
-          }
-        }
+        cloudPatients.sort((a, b) => a.bed.localeCompare(b.bed));
+        setPatients(cloudPatients);
       }, (error) => {
         console.error('Firestore onSnapshot error:', error);
         setCloudStatusMsg('เกิดข้อผิดพลาดการซิงค์');
@@ -497,8 +383,15 @@ export default function App() {
       return () => unsubscribe();
     } else {
       try {
-        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(patients));
-      } catch {}
+        const saved = localStorage.getItem('vap_ward_patients_f3');
+        if (saved) {
+          setPatients(JSON.parse(saved).map(migratePatient));
+        } else {
+          setPatients([]);
+        }
+      } catch {
+        setPatients([]);
+      }
     }
   }, [firestoreDb]);
 
@@ -513,6 +406,10 @@ export default function App() {
           console.error('Error writing to Firestore:', e);
         }
       });
+    } else {
+      try {
+        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updatedPatients));
+      } catch {}
     }
   };
 
@@ -620,12 +517,14 @@ export default function App() {
         console.error('Error deleting from Firestore:', e);
       }
     } else {
-      localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated));
+      try {
+        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated));
+      } catch {}
     }
   };
 
   // New patient form state
-  const [newBed, setNewBed] = useState('B05');
+  const [newBed, setNewBed] = useState('B01');
   const [newName, setNewName] = useState('');
   const [newHn, setNewHn] = useState('');
   const [newAge, setNewAge] = useState('60');
@@ -678,27 +577,10 @@ export default function App() {
         console.error('Error adding to Firestore:', e);
       }
     } else {
-      localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated));
+      try {
+        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated));
+      } catch {}
     }
-  };
-
-  // Reset Demo Data
-  const handleResetDemoData = async () => {
-    const migratedInitial = INITIAL_PATIENTS.map(migratePatient);
-    setPatients(migratedInitial);
-    if (firestoreDb) {
-      for (const pt of migratedInitial) {
-        try {
-          await setDoc(doc(firestoreDb, 'ward_patients_f3', pt.id), pt);
-        } catch (e) {
-          console.error('Error resetting demo data in Firestore:', e);
-        }
-      }
-    } else {
-      localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migratedInitial));
-    }
-    alert('รีเซ็ตข้อมูลตัวอย่างผู้ป่วยหอผู้ป่วย อญ.3 สำเร็จแล้ว!');
-    setShowCloudModal(false);
   };
 
   // Copy Handover Note
@@ -772,7 +654,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
       <div className="w-full sm:max-w-[430px] h-[100vh] sm:h-[880px] bg-[#F0FDFA] shadow-2xl sm:rounded-[40px] flex flex-col overflow-hidden relative border border-slate-300">
         
         {/* Top Header */}
-        <header className="bg-teal-700 text-white px-5 pt-3 pb-2.5 flex flex-col gap-2 shadow-md flex-shrink-0">
+        <header className="bg-teal-700 text-white px-5 pt-3 pb-2.5 flex flex-col gap-2 shadow-md flex-shrink-0 z-20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-teal-600 border border-teal-500 flex items-center justify-center shadow-inner">
@@ -817,12 +699,12 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </div>
         </header>
 
-        {/* Main Body View */}
-        <div className="flex-1 overflow-y-auto pb-20 bg-[#F0FDFA]">
+        {/* Main Body View - Added pt-4 so header never overlaps content */}
+        <div className="flex-1 overflow-y-auto pb-24 pt-4 px-4 bg-[#F0FDFA]">
           
           {/* ================= 1. HOME SCREEN ================= */}
           {currentTab === 'home' && !selectedPatientId && (
-            <div className="p-4 space-y-4 font-sarabun">
+            <div className="space-y-4 font-sarabun">
               {/* Quick Stats Grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white p-3.5 rounded-2xl border border-teal-100 shadow-sm">
@@ -895,7 +777,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
           {/* ================= 2. BED LIST SCREEN ================= */}
           {currentTab === 'beds' && !selectedPatientId && (
-            <div className="p-4 space-y-4 font-sarabun">
+            <div className="space-y-4 font-sarabun">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold font-prompt text-slate-800">รายเตียง (อญ.3)</h2>
@@ -940,7 +822,9 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
               {/* Patient Cards List */}
               <div className="space-y-3">
                 {filteredPatients.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 text-xs">ไม่พบรายการผู้ป่วยในตัวกรองนี้</div>
+                  <div className="text-center py-12 text-slate-400 text-xs bg-white rounded-2xl border border-teal-100 p-6">
+                    ยังไม่มีข้อมูลผู้ป่วยในขณะนี้ (สามารถกดปุ่ม "+ เพิ่มผู้ป่วย" ด้านบนได้ทันที)
+                  </div>
                 ) : (
                   filteredPatients.map((patient) => {
                     const shiftProgKey = activeChecklistShift;
@@ -1027,7 +911,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
             const riskTier = getRiskTier(currentProg);
 
             return (
-              <div className="p-4 space-y-4 font-sarabun">
+              <div className="space-y-4 font-sarabun">
                 {/* Top Bar with Back & Delete */}
                 <div className="flex items-center justify-between">
                   <button 
@@ -1339,7 +1223,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
           {/* ================= 4. WHAPOS REFERENCE GUIDE SCREEN ================= */}
           {currentTab === 'guide' && (
-            <div className="p-4 space-y-4 font-sarabun">
+            <div className="space-y-4 font-sarabun">
               <div>
                 <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Risk Tiers</h2>
                 <p className="text-xs text-slate-500">เกณฑ์การคำนวณระดับความเสี่ยงอัตโนมัติจากคะแนน % การปฏิบัติ</p>
@@ -1542,7 +1426,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
               <form onSubmit={handleAddPatient} className="space-y-3 text-xs">
                 <div>
-                  <label className="block text-slate-500 font-semibold mb-1">เลขเตียง (เช่น B05)</label>
+                  <label className="block text-slate-500 font-semibold mb-1">เลขเตียง (เช่น B01)</label>
                   <input 
                     type="text" 
                     value={newBed}
@@ -1712,7 +1596,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <span>สถานะ: {cloudStatusMsg}</span>
                 </div>
 
-                <div className="pt-2 space-y-2">
+                <div className="pt-2">
                   <button
                     onClick={() => {
                       alert('บันทึกและเชื่อมต่อ Firebase เรียบร้อยแล้ว');
@@ -1721,13 +1605,6 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors"
                   >
                     บันทึกการตั้งค่า Cloud
-                  </button>
-
-                  <button
-                    onClick={handleResetDemoData}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-prompt text-xs py-2.5 rounded-xl transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCcw className="w-3.5 h-3.5" /> รีเซ็ตข้อมูลตัวอย่าง อญ.3 (Reset Demo)
                   </button>
                 </div>
               </div>

@@ -29,7 +29,9 @@ import {
   Moon,
   FileText,
   FileSpreadsheet,
-  ExternalLink
+  ExternalLink,
+  BellRing,
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -264,6 +266,7 @@ export default function App() {
   const [activeChecklistShift, setActiveChecklistShift] = useState<'morning' | 'afternoon' | 'night'>('morning');
   const [copiedNote, setCopiedNote] = useState(false);
   const [showWeaningProtocolSurvey, setShowWeaningProtocolSurvey] = useState(false);
+  const [expandedAlertBeds, setExpandedAlertBeds] = useState<Record<string, boolean>>({});
 
   // Active Nurse & Shift States
   const [activeShift, setActiveShift] = useState<'เวรเช้า' | 'เวรบ่าย' | 'เวรดึก'>(() => {
@@ -631,6 +634,21 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
     return getRiskTier(prog).isHighRisk;
   }).length;
 
+  // Missed / Pending Items Alert Calculations for Current Shift
+  const bedAlerts = patients
+    .map(p => {
+      const items = p.checklists?.[activeChecklistShift] || DEFAULT_WHAPOS_CHECKLIST;
+      const pendingItems = items.filter(i => i.status === 'pending');
+      const notCompliedItems = items.filter(i => i.status === 'not_complied');
+      return {
+        patient: p,
+        pendingItems,
+        notCompliedItems,
+        totalMissed: pendingItems.length + notCompliedItems.length
+      };
+    })
+    .filter(a => a.totalMissed > 0);
+
   const filteredPatients = patients.filter(p => {
     const prog = p.progresses?.[activeChecklistShift] ?? 0;
     const tier = getRiskTier(prog);
@@ -728,6 +746,112 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="text-[11px] text-slate-500 mt-1">ต้องซ่อมเสริม/พัฒนา</div>
                 </div>
               </div>
+
+              {/* ================= MISSED / PENDING ALERT BOX ================= */}
+              {patients.length > 0 && (
+                <div className={`rounded-2xl p-3.5 border shadow-sm space-y-2.5 ${
+                  bedAlerts.length > 0 
+                    ? 'bg-amber-50/90 border-amber-300' 
+                    : 'bg-emerald-50/90 border-emerald-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                        bedAlerts.length > 0 ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
+                      }`}>
+                        {bedAlerts.length > 0 ? <BellRing className="w-4 h-4 animate-bounce" /> : <CheckCircle2 className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <h3 className={`text-xs font-bold font-prompt ${
+                          bedAlerts.length > 0 ? 'text-amber-950' : 'text-emerald-900'
+                        }`}>
+                          {bedAlerts.length > 0 
+                            ? `แจ้งเตือนรายการที่ยังไม่ได้ทำ (${activeShift})` 
+                            : `ทำครบทุกรายการแล้ว (${activeShift})`}
+                        </h3>
+                        <p className="text-[10px] text-slate-600">
+                          {bedAlerts.length > 0 
+                            ? `พบ ${bedAlerts.length} เตียงที่ยังมีรายการค้างทำ/ไม่ปฏิบัติ (แตะที่เตียงเพื่อเข้าไปประเมิน)` 
+                            : 'เยี่ยมมาก! ผู้ป่วยทุกรายได้รับการประเมิน WHAPO + S ครบ 100%'}
+                        </p>
+                      </div>
+                    </div>
+                    {bedAlerts.length > 0 && (
+                      <span className="text-[10px] font-bold font-prompt bg-rose-600 text-white px-2 py-0.5 rounded-full">
+                        {bedAlerts.length} เตียง
+                      </span>
+                    )}
+                  </div>
+
+                  {bedAlerts.length > 0 && (
+                    <div className="space-y-2 pt-1 max-h-60 overflow-y-auto pr-0.5">
+                      {bedAlerts.map(({ patient, pendingItems, notCompliedItems, totalMissed }) => {
+                        const isExpanded = !!expandedAlertBeds[patient.id];
+                        const allMissed = [
+                          ...notCompliedItems.map(i => ({ ...i, alertType: 'not_complied' as const })),
+                          ...pendingItems.map(i => ({ ...i, alertType: 'pending' as const }))
+                        ];
+                        const displayItems = isExpanded ? allMissed : allMissed.slice(0, 3);
+
+                        return (
+                          <div 
+                            key={patient.id}
+                            onClick={() => setSelectedPatientId(patient.id)}
+                            className="bg-white rounded-xl p-2.5 border border-amber-200 hover:border-teal-500 shadow-xs cursor-pointer transition-all group"
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold font-prompt bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md">
+                                  เตียง {patient.bed}
+                                </span>
+                                <span className="text-xs font-bold font-prompt text-slate-800 truncate max-w-[140px]">
+                                  {patient.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[10px] font-prompt font-semibold text-teal-700 group-hover:translate-x-0.5 transition-transform">
+                                <span>ค้าง {totalMissed} ข้อ</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </div>
+                            </div>
+
+                            <ul className="space-y-1 pl-1">
+                              {displayItems.map(item => (
+                                <li key={item.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
+                                  {item.alertType === 'not_complied' ? (
+                                    <span className="text-[9px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5">
+                                      ไม่ปฏิบัติ
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5 flex items-center gap-0.5">
+                                      <Clock className="w-2.5 h-2.5" /> ลืมทำ
+                                    </span>
+                                  )}
+                                  <span className="text-slate-700">
+                                    <strong className="text-teal-800">[{item.groupKey}]</strong> {decodeSymbols(item.text)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+
+                            {allMissed.length > 3 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedAlertBeds(prev => ({ ...prev, [patient.id]: !isExpanded }));
+                                }}
+                                className="mt-1.5 text-[10px] font-prompt font-semibold text-amber-800 hover:text-amber-950 underline pl-1"
+                              >
+                                {isExpanded ? 'ย่อรายการ ▲' : `ดูเพิ่มอีก ${allMissed.length - 3} รายการที่ยังไม่ได้ทำ ▼`}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Clean 3-Card Menu layout */}
               <div>
@@ -852,6 +976,8 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     const shiftProgKey = activeChecklistShift;
                     const currentProg = patient.progresses?.[shiftProgKey] ?? 0;
                     const riskTier = getRiskTier(currentProg);
+                    const shiftItems = patient.checklists?.[shiftProgKey] || DEFAULT_WHAPOS_CHECKLIST;
+                    const missedCount = shiftItems.filter(i => i.status !== 'complied').length;
                     
                     return (
                       <div 
@@ -881,11 +1007,16 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                               {patient.bed}
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="text-sm font-bold font-prompt text-slate-800">{patient.name}</h3>
                                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
                                   {riskTier.label} ({currentProg}%)
                                 </span>
+                                {missedCount > 0 && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                    ค้าง {missedCount} ข้อ
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 HN: {patient.hn} | {patient.gender} {patient.age} ปี | <span className="font-semibold text-teal-700">Ventilator Day {patient.ventDay}</span>
@@ -1405,11 +1536,16 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
           <button 
             onClick={() => { setCurrentTab('beds'); setSelectedPatientId(null); }}
-            className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors ${
+            className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors relative ${
               currentTab === 'beds' ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <Users className="w-5 h-5" />
+            {bedAlerts.length > 0 && (
+              <span className="absolute top-0.5 right-4 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {bedAlerts.length}
+              </span>
+            )}
             <span className="text-[10px] font-prompt">ผู้ป่วย</span>
           </button>
 

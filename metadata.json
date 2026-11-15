@@ -1,0 +1,6 @@
+{
+  "name": "VAP Bundle WHAPOS Medical Reference",
+  "description": "Interactive clinical medical reference guide and checklist for Ventilator-Associated Pneumonia (VAP) prevention bundle (WHAPOS)",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

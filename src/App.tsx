@@ -115,7 +115,7 @@ const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
 
   // O - ORAL CARE การทำความสะอาดช่องปาก
   { id: 'o-1', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง', status: 'pending' },
-  { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm', status: 'pending' },
+  { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ >1,500 ppm', status: 'pending' },
   { id: 'o-3', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน', status: 'pending' },
 
   // S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง
@@ -127,13 +127,13 @@ const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
 const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
   // หมวดที่ 1
   { id: 'w1-1', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.1 มีการประเมินภาวะที่ทำให้เกิดระบบหายใจล้มเหลวดีขึ้น', status: 'pending', note: '' },
-  { id: 'w1-2', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.2 ตรวจไม่มีภาวะขาดออกซิเจนครบ 3 ข้อ (PaO2/FiO2 ratio &gt; 150 หรือ O2 sat &gt; 92% ขณะใช้ FiO2 &lt; 0.4, PEEP &lt; 5 cmH2O, FiO2 &lt; 0.4)', status: 'pending', note: '' },
-  { id: 'w1-3', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.3 ประเมินระบบไหลเวียนเลือดปกติ 2 ข้อ (ไม่มี active Myocardial Ischemia, BP &gt; 90/60 ไม่ต้องใช้ Vasopressor drug หรือให้ Dopamine &lt; 5 mcg/kg/min)', status: 'pending', note: '' },
+  { id: 'w1-2', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.2 ตรวจไม่มีภาวะขาดออกซิเจนครบ 3 ข้อ (PaO2/FiO2 ratio > 150 หรือ O2 sat > 92% ขณะใช้ FiO2 < 0.4, PEEP < 5 cmH2O, FiO2 < 0.4)', status: 'pending', note: '' },
+  { id: 'w1-3', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.3 ประเมินระบบไหลเวียนเลือดปกติ 2 ข้อ (ไม่มี active Myocardial Ischemia, BP > 90/60 ไม่ต้องใช้ Vasopressor drug หรือให้ Dopamine < 5 mcg/kg/min)', status: 'pending', note: '' },
   { id: 'w1-4', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.4 ประเมินผู้ป่วยสามารถหายใจเองได้', status: 'pending', note: '' },
   { id: 'w1-5', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.5 ประเมินภาวะ Electrolyte ปกติ', status: 'pending', note: '' },
-  { id: 'w1-6', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.6 ไม่มีไข้ &gt; 38 °C', status: 'pending', note: '' },
-  { id: 'w1-7', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.7 การ Monitor P peak &lt; 20 cmH2O', status: 'pending', note: '' },
-  { id: 'w1-8', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.8 ผู้ป่วยควรมี Hb &gt; 7 gm%', status: 'pending', note: '' },
+  { id: 'w1-6', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.6 ไม่มีไข้ > 38 °C', status: 'pending', note: '' },
+  { id: 'w1-7', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.7 การ Monitor P peak < 20 cmH2O', status: 'pending', note: '' },
+  { id: 'w1-8', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.8 ผู้ป่วยควรมี Hb > 7 gm%', status: 'pending', note: '' },
 
   // หมวดที่ 2
   { id: 'w2-1', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.1 อธิบายผู้ป่วยให้ฝึกหายใจ และดูแลอย่างใกล้ชิด', status: 'pending', note: '' },
@@ -141,7 +141,7 @@ const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
   { id: 'w2-3', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.3 บันทึก BP, HR, RR, O2 sat. ก่อนทำ Short period SBT', status: 'pending', note: '' },
   { id: 'w2-4', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.4 เปลี่ยน Mode Spontaneous โดยใช้ PEEP 5 cmH2O (CPAP 5 cmH2O) ไม่ต้องใช้ PS กรณีเป็น Bird Ventilator ให้ on T-piece 8l/m FiO2 0.4', status: 'pending', note: '' },
   { id: 'w2-5', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.5 ประเมิน BP, HR, RR, O2 sat ลักษณะการหายใจ 5 นาที หลังเปลี่ยน Mode โดยยืนเฝ้าผู้ป่วยตลอดเวลา', status: 'pending', note: '' },
-  { id: 'w2-6', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.6 หยุด wean เมื่อพบว่า RR &gt; 35/min or RR &lt; 10/min, HR &gt; 140/min or HR &lt; 50/min, BP &gt; 180/90 mmHg or BP &lt; 90/60 mmHg, Oxygen saturation &lt; 90% ผู้ป่วยกระสับกระส่าย ผู้ป่วยบอกให้ทราบว่าทนไม่ไหว', status: 'pending', note: '' },
+  { id: 'w2-6', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.6 หยุด wean เมื่อพบว่า RR > 35/min or RR < 10/min, HR > 140/min or HR < 50/min, BP > 180/90 mmHg or BP < 90/60 mmHg, Oxygen saturation < 90% ผู้ป่วยกระสับกระส่าย ผู้ป่วยบอกให้ทราบว่าทนไม่ไหว', status: 'pending', note: '' },
 
   // หมวดที่ 3
   { id: 'w3-1', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.1 มีการต่อ T-piece 8L/M FiO2 0.4 (ถ้าเป็น T-piece ให้ทำต่อได้)', status: 'pending', note: '' },
@@ -150,7 +150,7 @@ const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
   { id: 'w3-4', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.4 ประเมินผู้ป่วยสามารถหายใจเองได้ครบ 120 นาที แล้วทดสอบว่าสามารถ Extubation ได้', status: 'pending', note: '' },
 
   // หมวดที่ 4
-  { id: 'w4-1', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.1 GCS &lt; 8 หรือผู้ป่วยไม่รู้สึกตัว และซึมมาก', status: 'pending', note: '' },
+  { id: 'w4-1', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.1 GCS < 8 หรือผู้ป่วยไม่รู้สึกตัว และซึมมาก', status: 'pending', note: '' },
   { id: 'w4-2', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.2 ผู้ป่วยมีเสมหะปริมาณมาก และไม่มีแรงไอขณะ suction', status: 'pending', note: '' },
   { id: 'w4-3', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.3 เคยมีประวัติ secretion obstruction', status: 'pending', note: '' },
   { id: 'w4-4', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.4 เคย Re intubation ภายใน 48 ชั่วโมงหลัง Extubation', status: 'pending', note: '' },
@@ -1251,7 +1251,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                   <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between">
                     <div>
-                      <strong className="text-rose-800 font-prompt">คะแนน &lt; 60% (เสี่ยงมาก):</strong>
+                      <strong className="text-rose-800 font-prompt">คะแนน < 60% (เสี่ยงมาก):</strong>
                       <div className="text-[11px] text-rose-700">ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)</div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">เสี่ยงมาก</span>
@@ -1346,7 +1346,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-pink-600 font-sarabun">
                     <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง</li>
-                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm</li>
+                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ >1,500 ppm</li>
                     <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน</li>
                   </ul>
                 </div>

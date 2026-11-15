@@ -34,7 +34,7 @@ import {
 import confetti from 'canvas-confetti';
 
 const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxgFwo8v3SsWJPcIpSM-3_WVjMuLecc5RuUNwWVQPpUscTPHm_DO5raBJ22YIddIjgfKw/exec";
-const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/";
+const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=sharing";
 
 // Helper to clean any HTML entities (&gt;, &lt;)
 const decodeSymbols = (str: string) => {
@@ -314,7 +314,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState<string>('เชื่อมต่อ Google Sheets แล้ว');
 
-  // Patients State - initialized strictly as empty array []
+  // Patients State
   const [patients, setPatients] = useState<Patient[]>([]);
 
   // Fetch all patients from Google Sheets

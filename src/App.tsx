@@ -1016,3 +1016,763 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                   {riskTier.label} ({currentProg}%)
                                 </span>
                                 {missedCount > 0 && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                    ค้าง {missedCount} ข้อ
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                HN: {patient.hn} | {patient.gender} {patient.age} ปี | <span className="font-semibold text-teal-700">Ventilator Day {patient.ventDay}</span>
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
+                              <span>WHAPO + S Score ({activeShift})</span>
+                              <span className={currentProg >= 80 ? 'text-emerald-600' : currentProg >= 60 ? 'text-amber-600' : 'text-rose-600'}>
+                                {currentProg}% ({riskTier.evalLevel.split(' ')[0]})
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full transition-all ${
+                                  currentProg >= 80 ? 'bg-emerald-500' : currentProg >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+                                }`}
+                                style={{ width: `${currentProg}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <span className="text-[10px] text-teal-800 font-semibold block">{patient.lastAssessedBy || 'พว.กานดา'} ({patient.lastAssessedShift || 'เวรเช้า'})</span>
+                            <span className="text-[10px] text-slate-500">เวลา {patient.lastAssessedTime || '08:30 น.'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedPatientId && selectedPatient && (() => {
+            const currentProg = selectedPatient.progresses?.[activeChecklistShift] ?? 0;
+            const riskTier = getRiskTier(currentProg);
+
+            return (
+              <div className="space-y-4 font-sarabun">
+                <div className="flex items-center justify-between">
+                  <button 
+                    onClick={() => setSelectedPatientId(null)}
+                    className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-teal-700 hover:text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> กลับ
+                  </button>
+                  <button 
+                    onClick={() => setDeleteConfirmId(selectedPatient.id)}
+                    className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" /> ลบเตียงนี้
+                  </button>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold font-prompt bg-teal-700 text-white px-2 py-0.5 rounded-md">
+                          {selectedPatient.bed} (อญ.3)
+                        </span>
+                        <span className="text-xs text-slate-500">HN: {selectedPatient.hn}</span>
+                      </div>
+                      <h2 className="text-base font-bold font-prompt text-slate-800 mt-1">{selectedPatient.name}</h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {selectedPatient.gender} {selectedPatient.age} ปี | Ventilator Day {selectedPatient.ventDay}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                    currentProg >= 80 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' :
+                    currentProg >= 60 ? 'bg-amber-50 border-amber-300 text-amber-950' :
+                    'bg-rose-50 border-rose-300 text-rose-950'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm font-prompt flex-shrink-0 ${
+                        currentProg >= 80 ? 'bg-emerald-200 text-emerald-800' :
+                        currentProg >= 60 ? 'bg-amber-200 text-amber-800' :
+                        'bg-rose-200 text-rose-800'
+                      }`}>
+                        {currentProg}%
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold font-prompt">ประเมินความเสี่ยง VAP:</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
+                            {riskTier.label}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-sarabun mt-1 font-semibold opacity-90">
+                          {riskTier.evalLevel}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex bg-teal-100/60 p-1 rounded-2xl">
+                  <button
+                    onClick={() => setSubTab('bundle')}
+                    className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
+                      subTab === 'bundle' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    ประเมิน WHAPO + S ({currentProg}%)
+                  </button>
+                  <button
+                    onClick={() => setSubTab('notes')}
+                    className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
+                      subTab === 'notes' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    สรุปส่งเวร
+                  </button>
+                </div>
+
+                {subTab === 'bundle' && (
+                  <div className="space-y-4">
+                    <div className="flex bg-white p-1.5 rounded-2xl border border-teal-200 shadow-xs gap-1">
+                      <button
+                        onClick={() => setActiveChecklistShift('morning')}
+                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
+                          activeChecklistShift === 'morning' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
+                        }`}
+                      >
+                        <Sun className="w-3.5 h-3.5" /> เวรเช้า ({selectedPatient.progresses?.morning ?? 0}%)
+                      </button>
+                      <button
+                        onClick={() => setActiveChecklistShift('afternoon')}
+                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
+                          activeChecklistShift === 'afternoon' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
+                        }`}
+                      >
+                        <Sunset className="w-3.5 h-3.5" /> เวรบ่าย ({selectedPatient.progresses?.afternoon ?? 0}%)
+                      </button>
+                      <button
+                        onClick={() => setActiveChecklistShift('night')}
+                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
+                          activeChecklistShift === 'night' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
+                        }`}
+                      >
+                        <Moon className="w-3.5 h-3.5" /> เวรดึก ({selectedPatient.progresses?.night ?? 0}%)
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between px-1">
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider font-prompt">
+                        WHAPO + S Bundle ({activeChecklistShift === 'morning' ? 'เวรเช้า' : activeChecklistShift === 'afternoon' ? 'เวรบ่าย' : 'เวรดึก'})
+                      </h3>
+                      <span className="text-xs font-semibold text-teal-700">
+                        ผู้ประเมิน: {selectedPatient.lastAssessedBy || nurseName}
+                      </span>
+                    </div>
+
+                    {(['W', 'H', 'A', 'P', 'O', 'S'] as const).map(groupKey => {
+                      const shiftItems = selectedPatient.checklists?.[activeChecklistShift] || DEFAULT_WHAPOS_CHECKLIST;
+                      const groupItems = shiftItems.filter(i => i.groupKey === groupKey);
+                      if (groupItems.length === 0) return null;
+                      const groupTitle = decodeSymbols(groupItems[0].groupTitle);
+                      const groupCompliedCount = groupItems.filter(i => i.status === 'complied').length;
+
+                      return (
+                        <div key={groupKey} className="bg-white rounded-2xl p-3.5 border border-teal-100 shadow-sm space-y-2.5">
+                          <div className="flex items-center justify-between border-b border-teal-50 pb-2">
+                            <h4 className="text-xs font-bold font-prompt text-teal-800 flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-extrabold">
+                                {groupKey}
+                              </span>
+                              {groupTitle}
+                            </h4>
+                            <span className="text-[11px] text-slate-500">
+                              ปฏิบัติแล้ว {groupCompliedCount}/{groupItems.length}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {groupItems.map(item => {
+                              const isComplied = item.status === 'complied';
+                              const isNotComplied = item.status === 'not_complied';
+                              const cleanText = decodeSymbols(item.text);
+
+                              return (
+                                <React.Fragment key={item.id}>
+                                  <div 
+                                    className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                      isComplied ? 'bg-emerald-50/40 border-emerald-300' :
+                                      isNotComplied ? 'bg-rose-50/40 border-rose-300' :
+                                      'bg-slate-50/60 border-slate-200'
+                                    }`}
+                                  >
+                                    <div className="flex-1">
+                                      <p className="text-xs font-sarabun font-medium text-slate-800 leading-relaxed">
+                                        {cleanText}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      <button
+                                        onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'complied')}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
+                                          isComplied 
+                                            ? 'bg-[#10B981] text-white shadow-sm ring-2 ring-emerald-200' 
+                                            : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
+                                        }`}
+                                      >
+                                        <Check className="w-3.5 h-3.5" /> ปฏิบัติ
+                                      </button>
+
+                                      <button
+                                        onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'not_complied')}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
+                                          isNotComplied 
+                                            ? 'bg-[#EF4444] text-white shadow-sm ring-2 ring-rose-200' 
+                                            : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
+                                        }`}
+                                      >
+                                        <X className="w-3.5 h-3.5" /> ไม่ปฏิบัติ
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {cleanText === 'ใช้ weaning protocol' && (
+                                    <div className="mt-2 ml-2 sm:ml-4 border-l-2 border-teal-500 pl-3 space-y-2">
+                                      <button
+                                        onClick={() => setShowWeaningProtocolSurvey(prev => !prev)}
+                                        className="w-full bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-prompt font-semibold py-2.5 px-3 rounded-xl flex items-center justify-between transition-colors shadow-xs"
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          <FileText className="w-4 h-4 text-teal-600" />
+                                          📋 แบบสำรวจการใช้ Weaning Protocol สำหรับพยาบาลวิชาชีพ
+                                        </span>
+                                        {showWeaningProtocolSurvey ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                      </button>
+
+                                      {showWeaningProtocolSurvey && (
+                                        <div className="bg-slate-50 border border-teal-200 rounded-2xl p-3.5 space-y-4 animate-in fade-in duration-200">
+                                          <div className="text-xs font-bold text-teal-900 font-prompt border-b border-teal-100 pb-1.5">
+                                            แบบสำรวจการใช้ Weaning Protocol (4 หมวด)
+                                          </div>
+
+                                          {[1, 2, 3, 4].map(catNum => {
+                                            const surveyList = selectedPatient.weaningSurveys?.[activeChecklistShift] || DEFAULT_WEANING_SURVEY;
+                                            const catItems = surveyList.filter(s => s.category === catNum);
+                                            if (catItems.length === 0) return null;
+                                            const catTitle = decodeSymbols(catItems[0].categoryTitle);
+
+                                            return (
+                                              <div key={catNum} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                                                <h5 className="text-[11px] font-bold font-prompt text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg">
+                                                  {catTitle}
+                                                </h5>
+
+                                                <div className="space-y-3 pt-1">
+                                                  {catItems.map(surveyItem => {
+                                                    const sComplied = surveyItem.status === 'complied';
+                                                    const sNotComplied = surveyItem.status === 'not_complied';
+                                                    const cleanSurveyText = decodeSymbols(surveyItem.text);
+
+                                                    return (
+                                                      <div key={surveyItem.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                          <p className="text-[11px] font-sarabun font-medium text-slate-800 flex-1 leading-relaxed">
+                                                            {cleanSurveyText}
+                                                          </p>
+                                                          <div className="flex items-center gap-1 flex-shrink-0">
+                                                            <button
+                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
+                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                                sComplied ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
+                                                              }`}
+                                                            >
+                                                              <Check className="w-3 h-3" /> ปฏิบัติ
+                                                            </button>
+                                                            <button
+                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
+                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                                sNotComplied ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
+                                                              }`}
+                                                            >
+                                                              <X className="w-3 h-3" /> ไม่ปฏิบัติ
+                                                            </button>
+                                                          </div>
+                                                        </div>
+
+                                                        <div>
+                                                          <input 
+                                                            type="text"
+                                                            value={surveyItem.note}
+                                                            onChange={e => updateWeaningItemNote(selectedPatient.id, activeChecklistShift, surveyItem.id, e.target.value)}
+                                                            placeholder="หมายเหตุ (ถ้ามี)..."
+                                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-teal-500 font-sarabun"
+                                                          />
+                                                        </div>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {subTab === 'notes' && (
+                  <div className="bg-white rounded-2xl p-4 border border-teal-100 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold font-prompt text-slate-800">สรุปส่งเวรตาม WHAPO + S & Weaning Protocol (อญ.3)</h3>
+                      <button
+                        onClick={() => handleCopyNotes(generateHandoverNote(selectedPatient))}
+                        className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-prompt px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 border border-teal-200 transition-colors"
+                      >
+                        {copiedNote ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedNote ? 'คัดลอกแล้ว!' : 'คัดลอกข้อความส่งเวร'}
+                      </button>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-sarabun whitespace-pre-line leading-relaxed">
+                      {generateHandoverNote(selectedPatient)}
+                    </div>
+                    <p className="text-[11px] text-slate-400">ข้อความสรุปส่งเวรแสดงคะแนน % ความเสี่ยงอัตโนมัติ และรายการ ปฏิบัติ / ไม่ปฏิบัติ ครบถ้วน</p>
+                  </div>
+                )}
+
+              </div>
+            );
+          })()}
+
+          {currentTab === 'guide' && (
+            <div className="space-y-4 font-sarabun">
+              <div>
+                <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Risk Tiers</h2>
+                <p className="text-xs text-slate-500">เกณฑ์การคำนวณระดับความเสี่ยงอัตโนมัติจากคะแนน % การปฏิบัติ</p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
+                <h3 className="text-xs font-bold font-prompt text-teal-800">📋 เกณฑ์การประเมินระดับความเสี่ยง VAP อัตโนมัติ</h3>
+                <div className="space-y-2 text-xs text-slate-700 font-sarabun">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                    <div>
+                      <strong className="text-emerald-800 font-prompt">คะแนน ≥ 80% (เสี่ยงน้อย):</strong>
+                      <div className="text-[11px] text-emerald-700">ระดับสูง / ดี / มาก (ผ่านเกณฑ์ระดับยอดเยี่ยม)</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">เสี่ยงน้อย</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+                    <div>
+                      <strong className="text-amber-800 font-prompt">คะแนน 60 - 79% (เสี่ยงปานกลาง):</strong>
+                      <div className="text-[11px] text-amber-700">ระดับปานกลาง (ผ่านเกณฑ์พื้นฐาน)</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">เสี่ยงปานกลาง</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between">
+                    <div>
+                      <strong className="text-rose-800 font-prompt">คะแนน &lt; 60% (เสี่ยงมาก):</strong>
+                      <div className="text-[11px] text-rose-700">ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">เสี่ยงมาก</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-2">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center font-prompt text-base">W</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">W - WEAN การหย่าเครื่องช่วยหายใจ</h4>
+                      <p className="text-[11px] text-slate-500">รวมแบบสำรวจ 4 หมวดสำหรับพยาบาลวิชาชีพ</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-cyan-600 font-sarabun">
+                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน</li>
+                    <li>ใช้ weaning protocol (มีแบบสำรวจละเอียด 4 หมวด)</li>
+                  </ul>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center font-prompt text-base">H</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">H - HAND HYGIENE การทำความสะอาดมือ</h4>
+                      <p className="text-[11px] text-slate-500">สุขอนามัยมือเคร่งครัด</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-emerald-600 font-sarabun">
+                    <li>ล้างมือ 7 ขั้นตอน</li>
+                    <li>ล้างมือ 5 moments</li>
+                  </ul>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center font-prompt text-base">A</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก</h4>
+                      <p className="text-[11px] text-slate-500">ลดความเสี่ยงการสำลักน้ำย่อย</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-amber-600 font-sarabun">
+                    <li>ยกหัวเตียงสูง 30-45 องศา</li>
+                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร</li>
+                    <li>ประเมิน NG ก่อน feeds</li>
+                    <li>ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-800 font-bold flex items-center justify-center font-prompt text-base">P</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน</h4>
+                      <p className="text-[11px] text-slate-500">จัดการสาย circuit และอุปกรณ์</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-violet-600 font-sarabun">
+                    <li>เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย</li>
+                    <li>เทน้ำทิ้งสาย circuit ด้วย aseptic technique</li>
+                    <li>ดูดเสมหะเท่าที่จำเป็น</li>
+                  </ul>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-800 font-bold flex items-center justify-center font-prompt text-base">O</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">O - ORAL CARE การทำความสะอาดช่องปาก</h4>
+                      <p className="text-[11px] text-slate-500">ลดแบคทีเรียและ Biofilm ในช่องปาก</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-pink-600 font-sarabun">
+                    <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง</li>
+                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm</li>
+                    <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน</li>
+                  </ul>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-800 font-bold flex items-center justify-center font-prompt text-base">S</div>
+                    <div>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง</h4>
+                      <p className="text-[11px] text-slate-500">ประเมินความตื่นตัวและลดขนาดยา</p>
+                    </div>
+                  </div>
+                  <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-indigo-600 font-sarabun">
+                    <li>ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า</li>
+                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ</li>
+                    <li>(ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        <nav className="absolute bottom-0 inset-x-0 bg-white border-t border-teal-100 px-2 py-2 flex items-center justify-around shadow-lg z-30">
+          <button 
+            onClick={() => { setCurrentTab('home'); setSelectedPatientId(null); }}
+            className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors ${
+              currentTab === 'home' && !selectedPatientId ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Activity className="w-5 h-5" />
+            <span className="text-[10px] font-prompt">หน้าหลัก</span>
+          </button>
+
+          <button 
+            onClick={() => { setCurrentTab('beds'); setSelectedPatientId(null); }}
+            className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors relative ${
+              currentTab === 'beds' ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            {bedAlerts.length > 0 && (
+              <span className="absolute top-0.5 right-4 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {bedAlerts.length}
+              </span>
+            )}
+            <span className="text-[10px] font-prompt">ผู้ป่วย</span>
+          </button>
+
+          <button 
+            onClick={() => { setCurrentTab('guide'); setSelectedPatientId(null); }}
+            className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors ${
+              currentTab === 'guide' ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <BookOpen className="w-5 h-5" />
+            <span className="text-[10px] font-prompt">คู่มือ</span>
+          </button>
+        </nav>
+
+        {showAddModal && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold font-prompt text-slate-800">เพิ่มผู้ป่วยใหม่ (หอผู้ป่วย อญ.3)</h3>
+                <button onClick={() => setShowAddModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddPatient} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-500 font-semibold mb-1">เลขเตียง (เช่น B01)</label>
+                  <input 
+                    type="text" 
+                    value={newBed}
+                    onChange={e => setNewBed(e.target.value)}
+                    required
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 font-semibold mb-1">ชื่อ-นามสกุลผู้ป่วย (หญิง)</label>
+                  <input 
+                    type="text" 
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    placeholder="เช่น นางสมใจ รักษาดี"
+                    required
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 font-semibold mb-1">เลข HN</label>
+                  <input 
+                    type="text" 
+                    value={newHn}
+                    onChange={e => setNewHn(e.target.value)}
+                    placeholder="เช่น 6701350"
+                    required
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-slate-500 font-semibold mb-1">อายุ (ปี)</label>
+                    <input 
+                      type="number" 
+                      value={newAge}
+                      onChange={e => setNewAge(e.target.value)}
+                      required
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-500 font-semibold mb-1">Ventilator Day</label>
+                    <input 
+                      type="number" 
+                      value={newVentDay}
+                      onChange={e => setNewVentDay(e.target.value)}
+                      required
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500" 
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-sarabun leading-relaxed">
+                  ℹ️ <strong>ระดับความเสี่ยง:</strong> จะคำนวณและอัปเดตอัตโนมัติจากผลการประเมินคะแนน WHAPO+S Bundle ในระบบ
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingNewBed}
+                  className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-prompt text-xs py-3 rounded-xl shadow-md transition-colors mt-2"
+                >
+                  {isSavingNewBed ? 'กำลังบันทึกข้อมูลลง Sheets...' : 'บันทึกข้อมูลผู้ป่วยลง Sheets'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {showNurseModal && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold font-prompt text-slate-800">ตั้งค่าผู้ประเมินและเวรปฏิบัติงาน</h3>
+                <button onClick={() => setShowNurseModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1 font-prompt">ชื่อพยาบาลผู้ประเมิน (Nurse Assessor):</label>
+                  <input 
+                    type="text"
+                    value={nurseName}
+                    onChange={e => setNurseName(e.target.value)}
+                    placeholder="เช่น พว.กานดา ใจดี"
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-teal-500 font-sarabun"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1.5 font-prompt">เลือกเวรปฏิบัติงาน:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveShift('เวรเช้า')}
+                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
+                        activeShift === 'เวรเช้า' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
+                      }`}
+                    >
+                      <Sun className="w-4 h-4" /> เวรเช้า
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveShift('เวรบ่าย')}
+                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
+                        activeShift === 'เวรบ่าย' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
+                      }`}
+                    >
+                      <Sunset className="w-4 h-4" /> เวรบ่าย
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveShift('เวรดึก')}
+                      className={`py-2 px-3 rounded-xl font-prompt text-xs font-semibold border flex flex-col items-center gap-1 transition-all ${
+                        activeShift === 'เวรดึก' ? 'bg-teal-600 text-white border-teal-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-teal-50'
+                      }`}
+                    >
+                      <Moon className="w-4 h-4" /> เวรดึก
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowNurseModal(false)}
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors mt-2"
+                >
+                  บันทึกข้อมูล
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showCloudModal && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold font-prompt text-slate-800">เชื่อมต่อฐานข้อมูล Google Sheets</h3>
+                <button onClick={() => setShowCloudModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="block text-slate-700 font-semibold font-prompt">ลิงก์เปิดไฟล์ Google Sheets (สำหรับกดเปิดดูตาราง):</label>
+                  <input 
+                    type="url"
+                    value={sheetViewLink}
+                    onChange={e => setSheetViewLink(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono text-slate-800 focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-slate-700 font-semibold font-prompt">Google Apps Script Web App URL (สำหรับส่งข้อมูล):</label>
+                  <textarea 
+                    rows={2}
+                    value={sheetUrlInput}
+                    onChange={e => setSheetUrlInput(e.target.value)}
+                    className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2 text-[11px] font-mono text-slate-800 focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div className={`p-2.5 rounded-xl text-[11px] font-semibold flex items-center gap-2 ${
+                  isSheetConnected ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  {isSheetConnected ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />}
+                  <span>สถานะ: {cloudStatusMsg}</span>
+                </div>
+
+                <div className="pt-1 flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
+                      localStorage.setItem('vap_google_sheet_view_link', sheetViewLink);
+                      fetchFromGoogleSheets(sheetUrlInput);
+                      setShowCloudModal(false);
+                    }}
+                    className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors"
+                  >
+                    บันทึกการตั้งค่าและซิงค์ข้อมูล
+                  </button>
+                  <a
+                    href={sheetViewLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-prompt font-semibold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" /> เปิดไฟล์ Google Sheets ตอนนี้
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirmId && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+              <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-bold font-prompt text-slate-800">ยืนยันการลบเตียง / จำหน่ายผู้ป่วย?</h3>
+              <p className="text-xs text-slate-500">
+                คุณต้องการลบข้อมูลเตียงนี้ออกจาก Google Sheets และระบบหอผู้ป่วย อญ.3 หรือไม่
+              </p>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={() => handleDeletePatient(deleteConfirmId)}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
+                >
+                  ยืนยันลบ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

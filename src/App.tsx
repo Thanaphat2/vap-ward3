@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Activity,
   Users,
@@ -31,13 +31,18 @@ import {
   FileSpreadsheet,
   ExternalLink,
   BellRing,
-  Clock
+  Clock,
+  Save,
+  Send
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-// ใส่ URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets ของคุณที่นี่
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw_iIAr-Fcdkx1Wx16IHk1Wcti4-QindrRMuLhYHLH-IGyCoO4zn1JhTmbV3S-f_eai/exec";
+// URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets
+const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwwlA5tmUzfQ1P4JSgjR_GGGjTQdoQ5VoAtdvmy79o6tDESucuTCLsb26Az4RVvkj5Tiw/exec";
 const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1cjMkr0wsqzq1LfzyATBEnR7abgpQlqBkzA3NAQC76Ls/edit";
+
+const STORAGE_PATIENTS_KEY = 'vap_ward_patients_f3';
+const STORAGE_DELETED_IDS_KEY = 'vap_deleted_ids_f3';
 
 const decodeSymbols = (str: string) => {
   if (!str) return '';
@@ -89,6 +94,7 @@ interface Patient {
   lastAssessedShift?: string;
   lastAssessedTime?: string;
   updatedAt?: number;
+  isDischarged?: boolean;
 }
 
 const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
@@ -244,8 +250,25 @@ const migratePatient = (p: any): Patient => {
     lastAssessedBy: p.lastAssessedBy || 'พว.กานดา',
     lastAssessedShift: p.lastAssessedShift || 'เวรเช้า',
     lastAssessedTime: p.lastAssessedTime || '08:30 น.',
-    updatedAt: p.updatedAt || 0
+    updatedAt: p.updatedAt || 0,
+    isDischarged: Boolean(p.isDischarged)
   };
+};
+
+const getDeletedIdsSet = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELETED_IDS_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+};
+
+const addDeletedId = (id: string) => {
+  try {
+    const set = getDeletedIdsSet();
+    set.add(id);
+    localStorage.setItem(STORAGE_DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
 };
 
 export default function App() {
@@ -256,12 +279,15 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showNurseModal, setShowNurseModal] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteTargetPatient, setDeleteTargetPatient] = useState<Patient | null>(null);
   const [subTab, setSubTab] = useState<'bundle' | 'notes'>('bundle');
   const [activeChecklistShift, setActiveChecklistShift] = useState<'morning' | 'afternoon' | 'night'>('morning');
   const [copiedNote, setCopiedNote] = useState(false);
   const [showWeaningProtocolSurvey, setShowWeaningProtocolSurvey] = useState(false);
   const [expandedAlertBeds, setExpandedAlertBeds] = useState<Record<string, boolean>>({});
+  
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [exportSuccessBanner, setExportSuccessBanner] = useState<string | null>(null);
   const [isSavingNewBed, setIsSavingNewBed] = useState(false);
   const [isDeletingBed, setIsDeletingBed] = useState(false);
 
@@ -310,111 +336,31 @@ export default function App() {
   });
   const [isSheetConnected, setIsSheetConnected] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [cloudStatusMsg, setCloudStatusMsg] = useState<string>('เชื่อมต่อ Google Sheets แล้ว');
+  const [cloudStatusMsg, setCloudStatusMsg] = useState<string>('พร้อมบันทึกและส่งออกข้อมูล');
 
   const [patients, setPatients] = useState<Patient[]>(() => {
     try {
-      const saved = localStorage.getItem('vap_ward_patients_f3');
-      if (saved) return JSON.parse(saved).map(migratePatient);
+      const saved = localStorage.getItem(STORAGE_PATIENTS_KEY);
+      const deletedSet = getDeletedIdsSet();
+      if (saved) {
+        return JSON.parse(saved)
+          .map(migratePatient)
+          .filter((p: Patient) => !deletedSet.has(p.id) && !p.isDischarged);
+      }
     } catch {}
     return [];
   });
 
-  // เก็บรายชื่อเตียงที่เพิ่งลบเพื่อป้องกันการเด้งกลับมาระหว่างรอ Google Sheets อัปเดต
-  const deletedIdsRef = useRef>(new Map());
-  const lastWriteTimeRef = useRef<number>(0);
-  const inFlightSyncCountRef = useRef<number>(0);
-
-  const sendUpsertToSheet = async (patient: Patient, targetUrl = sheetUrlInput) => {
-    if (!targetUrl.trim()) return;
-    lastWriteTimeRef.current = Date.now();
-    inFlightSyncCountRef.current += 1;
-    setIsSyncing(true);
-    setCloudStatusMsg('กำลังบันทึกลง Sheets...');
-    try {
-      await fetch(targetUrl.trim(), {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'upsert', patient })
-      });
-      lastWriteTimeRef.current = Date.now();
-      setIsSheetConnected(true);
-      setCloudStatusMsg('บันทึกข้อมูลเรียบร้อย');
-    } catch (e) {
-      console.error('Sync error:', e);
-      setCloudStatusMsg('ส่งข้อมูลไป Sheets ขัดข้อง');
-    } finally {
-      inFlightSyncCountRef.current = Math.max(0, inFlightSyncCountRef.current - 1);
-      if (inFlightSyncCountRef.current === 0) {
-        setIsSyncing(false);
-      }
-    }
-  };
-
-  // ผสานข้อมูลจาก Sheets กับข้อมูลในเครื่อง โดยยึดข้อมูลที่ใหม่กว่า (updatedAt) และกรองเตียงที่ลบออกไปแล้ว
-  const mergeRemotePatients = (remoteRawList: any[]) => {
-    const now = Date.now();
-    // ล้างรายการลบที่เกิน 60 วินาที
-    for (const [delId, delTime] of deletedIdsRef.current.entries()) {
-      if (now - delTime > 60000) {
-        deletedIdsRef.current.delete(delId);
-      }
-    }
-
-    const remoteMigrated = remoteRawList
-      .map(migratePatient)
-      .filter(p => !deletedIdsRef.current.has(p.id));
-
-    setPatients(prevLocal => {
-      const localMap = new Map<string, Patient>();
-      prevLocal.forEach(lp => {
-        if (!deletedIdsRef.current.has(lp.id)) {
-          localMap.set(lp.id, lp);
-        }
-      });
-
-      const mergedMap = new Map<string, Patient>();
-
-      // ตรวจสอบข้อมูลจากฝั่ง Sheets
-      remoteMigrated.forEach(rp => {
-        const lp = localMap.get(rp.id);
-        if (lp && (lp.updatedAt || 0) > (rp.updatedAt || 0)) {
-          // ข้อมูลในเครื่องเพิ่งแก้ไขใหม่กว่าใน Sheets ให้คงค่าในเครื่องไว้
-          mergedMap.set(rp.id, lp);
-        } else {
-          mergedMap.set(rp.id, rp);
-        }
-      });
-
-      // เผื่อมีเตียงที่เพิ่งสร้างใหม่ในเครื่องแล้วยังไม่ขึ้นใน Sheets (ภายใน 30 วินาทีล่าสุด)
-      localMap.forEach((lp, id) => {
-        if (!mergedMap.has(id) && (now - (lp.updatedAt || 0) < 30000)) {
-          mergedMap.set(id, lp);
-        }
-      });
-
-      const finalList = Array.from(mergedMap.values()).sort((a, b) =>
-        a.bed.localeCompare(b.bed, 'th', { numeric: true })
-      );
-      try {
-        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(finalList));
-      } catch {}
-      return finalList;
-    });
-  };
-
-  const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput, silent = false) => {
+  // โหลดข้อมูลจาก Google Sheets เฉพาะตอนเปิดแอปครั้งแรก หรือตอนกดปุ่มรีเฟรชเอง
+  const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput, forceOverwrite = false) => {
     if (!targetUrl.trim()) {
       setIsSheetConnected(false);
-      setCloudStatusMsg('ยังไม่ได้ใส่ URL (ใช้ Local)');
+      setCloudStatusMsg('ยังไม่ได้ใส่ URL (บันทึกในเครื่อง)');
       return;
     }
 
-    if (!silent) {
-      setIsSyncing(true);
-      setCloudStatusMsg('กำลังดึงข้อมูลล่าสุด...');
-    }
+    setIsSyncing(true);
+    setCloudStatusMsg('กำลังดึงข้อมูลจาก Sheets...');
 
     try {
       const separator = targetUrl.includes('?') ? '&' : '?';
@@ -427,44 +373,116 @@ export default function App() {
       });
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
+
       if (Array.isArray(data)) {
-        mergeRemotePatients(data);
+        const deletedSet = getDeletedIdsSet();
+        const remotePatients = data
+          .map(migratePatient)
+          .filter(p => !deletedSet.has(p.id) && !p.isDischarged);
+
+        setPatients(prevLocal => {
+          if (!forceOverwrite && prevLocal.length > 0) {
+            const localMap = new Map(prevLocal.map(p => [p.id, p]));
+            const merged = new Map<string, Patient>();
+
+            remotePatients.forEach(rp => {
+              const lp = localMap.get(rp.id);
+              if (lp && (lp.updatedAt || 0) >= (rp.updatedAt || 0)) {
+                merged.set(rp.id, lp);
+              } else {
+                merged.set(rp.id, rp);
+              }
+            });
+
+            localMap.forEach((lp, id) => {
+              if (!merged.has(id)) {
+                merged.set(id, lp);
+              }
+            });
+
+            const sorted = Array.from(merged.values()).sort((a, b) =>
+              a.bed.localeCompare(b.bed, 'th', { numeric: true })
+            );
+            try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(sorted)); } catch {}
+            return sorted;
+          } else {
+            const sorted = remotePatients.sort((a, b) =>
+              a.bed.localeCompare(b.bed, 'th', { numeric: true })
+            );
+            try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(sorted)); } catch {}
+            return sorted;
+          }
+        });
+
         setIsSheetConnected(true);
-        setCloudStatusMsg('ซิงค์ข้อมูลตรงกันทุกเครื่องแล้ว');
+        setCloudStatusMsg('ดึงข้อมูลจาก Sheets สำเร็จ');
       }
     } catch (err) {
       console.error('Error fetching from Google Sheets:', err);
       setIsSheetConnected(false);
-      setCloudStatusMsg('เชื่อมต่อ Sheets ไม่สำเร็จ (ใช้ข้อมูลในเครื่อง)');
+      setCloudStatusMsg('ไม่สามารถเชื่อมต่อ Sheets ได้ (ใช้ข้อมูลในเครื่อง)');
     } finally {
-      if (!silent && inFlightSyncCountRef.current === 0) {
-        setIsSyncing(false);
-      }
+      setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
     fetchFromGoogleSheets(sheetUrlInput, false);
+  }, []);
 
-    // ซิงค์อัตโนมัติทุก 10 วินาที
-    const interval = setInterval(() => {
-      const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 5000;
-      if (sheetUrlInput.trim() && inFlightSyncCountRef.current === 0 && !isRecentlyWritten) {
-        fetchFromGoogleSheets(sheetUrlInput, true);
-      }
-    }, 10000);
+  // ฟังก์ชันกดปุ่ม "บันทึกและส่งออก" -> เก็บประวัติลงชีต และยังคงข้อมูลผู้ป่วยไว้บนหน้าเว็บเหมือนเดิม
+  const handleSaveAndExportPatient = async (patient: Patient) => {
+    const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    const updatedPatient: Patient = {
+      ...patient,
+      lastAssessedBy: nurseName,
+      lastAssessedShift: activeShift,
+      lastAssessedTime: timeNow,
+      updatedAt: Date.now(),
+      isDischarged: false
+    };
 
-    return () => clearInterval(interval);
-  }, [sheetUrlInput]);
+    // คงข้อมูลผู้ป่วยไว้ในรายการบนหน้าเว็บและบันทึกลง localStorage
+    const updatedList = patients.map(p => (p.id === updatedPatient.id ? updatedPatient : p));
+    setPatients(updatedList);
+    try {
+      localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updatedList));
+    } catch {}
+
+    if (!sheetUrlInput.trim()) {
+      setHasUnsavedChanges(false);
+      setExportSuccessBanner(`บันทึกข้อมูลเตียง ${updatedPatient.bed} ลงเครื่องเรียบร้อยแล้ว (${timeNow})`);
+      setTimeout(() => setExportSuccessBanner(null), 5000);
+      return;
+    }
+
+    setIsSyncing(true);
+    setCloudStatusMsg('กำลังบันทึกและส่งออก...');
+    try {
+      await fetch(sheetUrlInput.trim(), {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'export_record', patient: updatedPatient })
+      });
+      setIsSheetConnected(true);
+      setHasUnsavedChanges(false);
+      setCloudStatusMsg('บันทึกและส่งออกลง Sheets สำเร็จ');
+      setExportSuccessBanner(`ส่งออกข้อมูลเตียง ${updatedPatient.bed} ลง Google Sheets เรียบร้อยแล้ว (ข้อมูลในเว็บยังอยู่ครบ)`);
+      setTimeout(() => setExportSuccessBanner(null), 6000);
+    } catch (e) {
+      console.error('Export error:', e);
+      setCloudStatusMsg('ส่งออกไป Sheets ขัดข้อง (บันทึกในเครื่องแล้ว)');
+      alert('บันทึกข้อมูลในเครื่องเรียบร้อย แต่ส่งออกไปยัง Google Sheets ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const selectedPatient = patients.find(p => p.id === selectedPatientId);
 
   const updateItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
-    const nowTs = Date.now();
-    let updatedTarget: Patient | undefined;
-
     const updated = patients.map(p => {
       if (p.id !== patientId) return p;
       const shiftItems = p.checklists[shiftKey].map(item => {
@@ -480,31 +498,25 @@ export default function App() {
         try { confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } }); } catch {}
       }
 
-      updatedTarget = {
+      return {
         ...p,
         checklists: { ...p.checklists, [shiftKey]: shiftItems },
         progresses: { ...p.progresses, [shiftKey]: newProg },
         lastAssessedBy: nurseName,
         lastAssessedShift: activeShift,
         lastAssessedTime: timeNow,
-        updatedAt: nowTs
+        updatedAt: Date.now()
       };
-      return updatedTarget;
     });
 
     setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      // ส่งขึ้น Google Sheets ทันทีไม่หน่วงเวลา ป้องกันรีเฟรชแล้วข้อมูลหาย
-      sendUpsertToSheet(updatedTarget);
-    }
+    setHasUnsavedChanges(true);
+    setExportSuccessBanner(null);
+    try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
   };
 
   const updateWeaningItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
-    const nowTs = Date.now();
-    let updatedTarget: Patient | undefined;
-
     const updated = patients.map(p => {
       if (p.id !== patientId) return p;
       const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
@@ -515,28 +527,23 @@ export default function App() {
         return item;
       });
 
-      updatedTarget = {
+      return {
         ...p,
         weaningSurveys: { ...p.weaningSurveys, [shiftKey]: surveyItems },
         lastAssessedBy: nurseName,
         lastAssessedShift: activeShift,
         lastAssessedTime: timeNow,
-        updatedAt: nowTs
+        updatedAt: Date.now()
       };
-      return updatedTarget;
     });
 
     setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      sendUpsertToSheet(updatedTarget);
-    }
+    setHasUnsavedChanges(true);
+    setExportSuccessBanner(null);
+    try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
   };
 
   const updateWeaningItemNote = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, noteText: string) => {
-    const nowTs = Date.now();
-    let updatedTarget: Patient | undefined;
-
     const updated = patients.map(p => {
       if (p.id !== patientId) return p;
       const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
@@ -546,59 +553,66 @@ export default function App() {
         return item;
       });
 
-      updatedTarget = {
+      return {
         ...p,
         weaningSurveys: { ...p.weaningSurveys, [shiftKey]: surveyItems },
-        updatedAt: nowTs
+        updatedAt: Date.now()
       };
-      return updatedTarget;
     });
 
     setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    if (updatedTarget) {
-      sendUpsertToSheet(updatedTarget);
-    }
+    setHasUnsavedChanges(true);
+    try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
   };
 
-  const handleDeletePatient = async (patientId: string) => {
+  // ลบเตียงออกจากหน้าเว็บเท่านั้น (ไม่ลบข้อมูลใน Google Sheets)
+  const executeDeletePatientFromWeb = async () => {
+    if (!deleteTargetPatient) return;
+    const target = deleteTargetPatient;
     setIsDeletingBed(true);
-    lastWriteTimeRef.current = Date.now();
-    deletedIdsRef.current.set(patientId, Date.now());
 
-    const targetPt = patients.find(p => p.id === patientId);
-    const updated = patients.filter(p => p.id !== patientId);
+    // 1. บันทึก ID ลงรายการที่นำออกจากหน้าเว็บแล้ว
+    addDeletedId(target.id);
+
+    // 2. ลบออกจากหน้าจอเว็บและ localStorage
+    const updated = patients.filter(p => p.id !== target.id);
     setPatients(updated);
-    setDeleteConfirmId(null);
-    if (selectedPatientId === patientId) setSelectedPatientId(null);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
-    
+    try {
+      localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated));
+    } catch {}
+
+    if (selectedPatientId === target.id) {
+      setSelectedPatientId(null);
+      setHasUnsavedChanges(false);
+    }
+
+    // 3. แจ้ง Google Sheets ว่าจำหน่ายเตียงนี้ออกจากหน้าเว็บแล้ว (โดยไม่ลบข้อมูลเก่าในชีต)
     if (sheetUrlInput.trim()) {
-      inFlightSyncCountRef.current += 1;
       setIsSyncing(true);
-      setCloudStatusMsg('กำลังลบเตียงออกจาก Sheets...');
+      setCloudStatusMsg(`นำเตียง ${target.bed} ออกจากหน้าเว็บแล้ว`);
       try {
         await fetch(sheetUrlInput.trim(), {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'delete',
-            patientId,
-            bed: targetPt?.bed || '',
-            hn: targetPt?.hn || ''
+            action: 'discharge_web_only',
+            patientId: target.id,
+            bed: target.bed,
+            name: target.name,
+            nurseName: nurseName,
+            patient: target
           })
         });
-        lastWriteTimeRef.current = Date.now();
-        setCloudStatusMsg('ลบเตียงเรียบร้อยแล้ว');
       } catch (e) {
-        console.error('Delete error:', e);
+        console.error('Discharge notify error:', e);
       } finally {
-        inFlightSyncCountRef.current = Math.max(0, inFlightSyncCountRef.current - 1);
         setIsSyncing(false);
       }
     }
+
     setIsDeletingBed(false);
+    setDeleteTargetPatient(null);
   };
 
   const [newBed, setNewBed] = useState('B01');
@@ -638,14 +652,30 @@ export default function App() {
       lastAssessedBy: nurseName,
       lastAssessedShift: activeShift,
       lastAssessedTime: timeNow,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      isDischarged: false
     };
 
     const updated = [newPt, ...patients].sort((a, b) => a.bed.localeCompare(b.bed, 'th', { numeric: true }));
     setPatients(updated);
-    try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
+    try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
 
-    await sendUpsertToSheet(newPt);
+    if (sheetUrlInput.trim()) {
+      setIsSyncing(true);
+      try {
+        await fetch(sheetUrlInput.trim(), {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'export_record', patient: newPt })
+        });
+        setCloudStatusMsg(`เพิ่มเตียง ${newPt.bed} ลง Sheets แล้ว`);
+      } catch (err) {
+        console.error('Add patient sync error:', err);
+      } finally {
+        setIsSyncing(false);
+      }
+    }
 
     setIsSavingNewBed(false);
     setShowAddModal(false);
@@ -752,16 +782,18 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => fetchFromGoogleSheets(sheetUrlInput, false)}
+                type="button"
+                onClick={() => fetchFromGoogleSheets(sheetUrlInput, true)}
                 disabled={isSyncing}
-                className="p-1 rounded-full bg-teal-800 hover:bg-teal-600 text-teal-100 transition-colors"
-                title="รีเฟรชข้อมูลจาก Google Sheets"
+                className="p-1.5 rounded-full bg-teal-800 hover:bg-teal-600 text-teal-100 transition-colors"
+                title="ดึงข้อมูลล่าสุดจาก Google Sheets"
               >
                 <RefreshCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               </button>
               <button 
+                type="button"
                 onClick={() => setShowCloudModal(true)}
-                className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-prompt font-semibold transition-all shadow-sm ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-prompt font-semibold transition-all shadow-sm ${
                   isSheetConnected 
                     ? 'bg-emerald-600/90 hover:bg-emerald-600 text-white border border-emerald-400' 
                     : 'bg-amber-500/90 hover:bg-amber-500 text-white border border-amber-300'
@@ -769,7 +801,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 title="ตั้งค่า Google Sheets"
               >
                 {isSheetConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
-                <span>{isSyncing ? 'กำลังบันทึก...' : (isSheetConnected ? 'Sheets' : 'Local')}</span>
+                <span>{isSyncing ? 'กำลังส่ง...' : (isSheetConnected ? 'Sheets' : 'Local')}</span>
               </button>
             </div>
           </div>
@@ -864,7 +896,11 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         return (
                           <div 
                             key={patient.id}
-                            onClick={() => setSelectedPatientId(patient.id)}
+                            onClick={() => {
+                              setSelectedPatientId(patient.id);
+                              setHasUnsavedChanges(false);
+                              setExportSuccessBanner(null);
+                            }}
                             className="bg-white rounded-xl p-2.5 border border-amber-200 hover:border-teal-500 shadow-xs cursor-pointer transition-all group"
                           >
                             <div className="flex items-center justify-between mb-1.5">
@@ -936,7 +972,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       </div>
                       <div>
                         <div className="text-sm font-bold font-prompt text-slate-800">รายเตียง (Bed List - อญ.3)</div>
-                        <div className="text-xs text-slate-500">ประเมิน WHAPO + S (16 คะแนน) คำนวณความเสี่ยงอัตโนมัติ</div>
+                        <div className="text-xs text-slate-500">ประเมิน WHAPO + S (16 คะแนน) และกดบันทึกส่งออก</div>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
@@ -970,9 +1006,9 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       </div>
                       <div>
                         <div className="text-sm font-bold font-prompt text-slate-800 flex items-center gap-1.5">
-                          เปิดดูตารางสรุป (Google Sheets)
+                          เปิดดูตารางประวัติทั้งหมด (Google Sheets)
                         </div>
-                        <div className="text-xs text-slate-500">ดูรายงานคะแนนรายเตียงและดาวน์โหลด Excel</div>
+                        <div className="text-xs text-slate-500">ดูข้อมูลย้อนหลังทุกครั้งที่บันทึก (ไม่ถูกลบแม้ลบเตียงในเว็บ)</div>
                       </div>
                     </div>
                     <ExternalLink className="w-5 h-5 text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
@@ -991,6 +1027,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <p className="text-xs text-slate-500">หอผู้ป่วยอายุรกรรมหญิง 3 (ผู้ป่วยหญิงทั้งหมด)</p>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setShowAddModal(true)}
                   className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-prompt px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-md transition-all"
                 >
@@ -1000,6 +1037,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
                 <button 
+                  type="button"
                   onClick={() => setBedFilter('all')}
                   className={`px-3 py-1.5 rounded-full text-xs font-prompt transition-colors whitespace-nowrap ${
                     bedFilter === 'all' ? 'bg-teal-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-teal-100'
@@ -1008,6 +1046,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   ทั้งหมด ({totalCount})
                 </button>
                 <button 
+                  type="button"
                   onClick={() => setBedFilter('vent')}
                   className={`px-3 py-1.5 rounded-full text-xs font-prompt transition-colors whitespace-nowrap ${
                     bedFilter === 'vent' ? 'bg-teal-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-teal-100'
@@ -1016,6 +1055,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   ใช้เครื่องช่วยหายใจ ({ventCount})
                 </button>
                 <button 
+                  type="button"
                   onClick={() => setBedFilter('high_risk')}
                   className={`px-3 py-1.5 rounded-full text-xs font-prompt transition-colors whitespace-nowrap ${
                     bedFilter === 'high_risk' ? 'bg-teal-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-teal-100'
@@ -1028,7 +1068,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
               <div className="space-y-3">
                 {filteredPatients.length === 0 ? (
                   <div className="text-center py-12 text-slate-400 text-xs bg-white rounded-2xl border border-teal-100 p-6">
-                    {isSyncing ? 'กำลังโหลดข้อมูลจาก Google Sheets...' : 'ยังไม่มีข้อมูลผู้ป่วยในขณะนี้ (สามารถกดปุ่ม "+ เพิ่มผู้ป่วย" ด้านบนได้ทันที)'}
+                    {isSyncing ? 'กำลังโหลดข้อมูลจาก Google Sheets...' : 'ยังไม่มีข้อมูลผู้ป่วยบนหน้าเว็บ (สามารถกดปุ่ม "+ เพิ่มผู้ป่วย" ด้านบนได้ทันที)'}
                   </div>
                 ) : (
                   filteredPatients.map((patient) => {
@@ -1043,8 +1083,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     return (
                       <div 
                         key={patient.id}
-                        onClick={() => setSelectedPatientId(patient.id)}
-                        className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer shadow-sm hover:shadow-md relative overflow-hidden ${
+                        className={`bg-white rounded-2xl border transition-all shadow-sm hover:shadow-md relative ${
                           riskTier.isHighRisk ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/30' : 'border-teal-100'
                         }`}
                       >
@@ -1053,60 +1092,69 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setDeleteConfirmId(patient.id);
+                            setDeleteTargetPatient(patient);
                           }}
-                          className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition-colors z-20"
-                          title="ลบเตียง"
+                          className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 flex items-center justify-center transition-colors z-10 shadow-xs"
+                          title={`นำเตียง ${patient.bed} ออกจากหน้าเว็บ`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
 
-                        <div className="flex items-start justify-between pr-9">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm font-prompt ${
-                              riskTier.isHighRisk ? 'bg-rose-100 text-rose-700' : 'bg-teal-100 text-teal-700'
-                            }`}>
-                              {patient.bed}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-sm font-bold font-prompt text-slate-800">{patient.name}</h3>
-                                <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
-                                  {riskTier.label} ({rawScore}/{totalItems} คะแนน)
-                                </span>
-                                {missedCount > 0 && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                    ค้าง {missedCount} ข้อ
-                                  </span>
-                                )}
+                        <div
+                          onClick={() => {
+                            setSelectedPatientId(patient.id);
+                            setHasUnsavedChanges(false);
+                            setExportSuccessBanner(null);
+                          }}
+                          className="p-4 cursor-pointer"
+                        >
+                          <div className="flex items-start justify-between pr-10">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm font-prompt flex-shrink-0 ${
+                                riskTier.isHighRisk ? 'bg-rose-100 text-rose-700' : 'bg-teal-100 text-teal-700'
+                              }`}>
+                                {patient.bed}
                               </div>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                HN: {patient.hn} | {patient.gender} {patient.age} ปี | <span className="font-semibold text-teal-700">Ventilator Day {patient.ventDay}</span>
-                              </p>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm font-bold font-prompt text-slate-800">{patient.name}</h3>
+                                  <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
+                                    {riskTier.label} ({rawScore}/{totalItems} คะแนน)
+                                  </span>
+                                  {missedCount > 0 && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      ค้าง {missedCount} ข้อ
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  HN: {patient.hn} | {patient.gender} {patient.age} ปี | <span className="font-semibold text-teal-700">Ventilator Day {patient.ventDay}</span>
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
-                              <span>คะแนน WHAPO + S ({activeShift})</span>
-                              <span className={currentProg >= 80 ? 'text-emerald-600' : currentProg >= 60 ? 'text-amber-600' : 'text-rose-600'}>
-                                {rawScore}/{totalItems} คะแนน ({currentProg}%)
-                              </span>
+                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
+                                <span>คะแนน WHAPO + S ({activeShift})</span>
+                                <span className={currentProg >= 80 ? 'text-emerald-600' : currentProg >= 60 ? 'text-amber-600' : 'text-rose-600'}>
+                                  {rawScore}/{totalItems} คะแนน ({currentProg}%)
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all ${
+                                    currentProg >= 80 ? 'bg-emerald-500' : currentProg >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+                                  }`}
+                                  style={{ width: `${currentProg}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full transition-all ${
-                                  currentProg >= 80 ? 'bg-emerald-500' : currentProg >= 60 ? 'bg-amber-500' : 'bg-rose-500'
-                                }`}
-                                style={{ width: `${currentProg}%` }}
-                              />
+                            <div className="text-right flex-shrink-0">
+                              <span className="text-[10px] text-teal-800 font-semibold block">{patient.lastAssessedBy || 'พว.กานดา'} ({patient.lastAssessedShift || 'เวรเช้า'})</span>
+                              <span className="text-[10px] text-slate-500">เวลา {patient.lastAssessedTime || '08:30 น.'}</span>
                             </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <span className="text-[10px] text-teal-800 font-semibold block">{patient.lastAssessedBy || 'พว.กานดา'} ({patient.lastAssessedShift || 'เวรเช้า'})</span>
-                            <span className="text-[10px] text-slate-500">เวลา {patient.lastAssessedTime || '08:30 น.'}</span>
                           </div>
                         </div>
                       </div>
@@ -1129,30 +1177,61 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
             const nightScore = calculateRawScore(selectedPatient.checklists?.night || []);
 
             return (
-              <div className="space-y-4 font-sarabun">
+              <div className="space-y-4 font-sarabun pb-6">
                 <div className="flex items-center justify-between">
                   <button 
-                    onClick={() => setSelectedPatientId(null)}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPatientId(null);
+                      setHasUnsavedChanges(false);
+                      setExportSuccessBanner(null);
+                    }}
                     className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-teal-700 hover:text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200"
                   >
                     <ArrowLeft className="w-4 h-4" /> กลับ
                   </button>
-                  <div className="flex items-center gap-1.5">
-                    <button 
-                      onClick={() => sendUpsertToSheet(selectedPatient)}
+                  <button 
+                    type="button"
+                    onClick={() => setDeleteTargetPatient(selectedPatient)}
+                    className="flex items-center gap-1 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบเตียงออกจากหน้าเว็บ
+                  </button>
+                </div>
+
+                {hasUnsavedChanges && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs text-amber-900 font-semibold">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>มีการแก้ไขคะแนนที่ยังไม่ส่งออกลง Sheets</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAndExportPatient(selectedPatient)}
                       disabled={isSyncing}
-                      className="flex items-center gap-1 text-xs font-prompt font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors"
+                      className="bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-prompt font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-xs flex-shrink-0"
                     >
-                      <Cloud className="w-3.5 h-3.5" /> {isSyncing ? 'กำลังบันทึก...' : 'บันทึกซิงค์'}
-                    </button>
-                    <button 
-                      onClick={() => setDeleteConfirmId(selectedPatient.id)}
-                      className="flex items-center gap-1 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> ลบเตียง
+                      <Save className="w-3.5 h-3.5" /> {isSyncing ? 'กำลังส่ง...' : 'ส่งออกเลย'}
                     </button>
                   </div>
-                </div>
+                )}
+
+                {exportSuccessBanner && (
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs text-emerald-900 font-semibold">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span>{exportSuccessBanner}</span>
+                    </div>
+                    <a
+                      href={sheetViewLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-prompt font-bold text-emerald-700 underline flex-shrink-0"
+                    >
+                      เปิดชีต
+                    </a>
+                  </div>
+                )}
 
                 <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
                   <div className="flex items-start justify-between">
@@ -1201,6 +1280,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                 <div className="flex bg-teal-100/60 p-1 rounded-2xl">
                   <button
+                    type="button"
                     onClick={() => setSubTab('bundle')}
                     className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
                       subTab === 'bundle' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
@@ -1209,6 +1289,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     ประเมิน WHAPO + S ({currentRawScore}/{currentTotalItems} คะแนน)
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSubTab('notes')}
                     className={`flex-1 py-2 text-xs font-prompt font-semibold rounded-xl transition-all ${
                       subTab === 'notes' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
@@ -1222,6 +1303,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="space-y-4">
                     <div className="flex bg-white p-1.5 rounded-2xl border border-teal-200 shadow-xs gap-1">
                       <button
+                        type="button"
                         onClick={() => setActiveChecklistShift('morning')}
                         className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
                           activeChecklistShift === 'morning' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
@@ -1230,6 +1312,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         <Sun className="w-3.5 h-3.5" /> เช้า ({morningScore}/{MAX_SCORE})
                       </button>
                       <button
+                        type="button"
                         onClick={() => setActiveChecklistShift('afternoon')}
                         className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
                           activeChecklistShift === 'afternoon' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
@@ -1238,6 +1321,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         <Sunset className="w-3.5 h-3.5" /> บ่าย ({afternoonScore}/{MAX_SCORE})
                       </button>
                       <button
+                        type="button"
                         onClick={() => setActiveChecklistShift('night')}
                         className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-prompt font-semibold flex items-center justify-center gap-1 transition-all ${
                           activeChecklistShift === 'night' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
@@ -1311,6 +1395,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                                     <div className="flex items-center gap-1.5 flex-shrink-0">
                                       <button
+                                        type="button"
                                         onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'complied')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
                                           isComplied 
@@ -1322,6 +1407,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                       </button>
 
                                       <button
+                                        type="button"
                                         onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'not_complied')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
                                           isNotComplied 
@@ -1337,6 +1423,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                   {cleanText === 'ใช้ weaning protocol' && (
                                     <div className="mt-2 ml-2 sm:ml-4 border-l-2 border-teal-500 pl-3 space-y-2">
                                       <button
+                                        type="button"
                                         onClick={() => setShowWeaningProtocolSurvey(prev => !prev)}
                                         className="w-full bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-prompt font-semibold py-2.5 px-3 rounded-xl flex items-center justify-between transition-colors shadow-xs"
                                       >
@@ -1379,6 +1466,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                                           </p>
                                                           <div className="flex items-center gap-1 flex-shrink-0">
                                                             <button
+                                                              type="button"
                                                               onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
                                                               className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
                                                                 sComplied ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
@@ -1387,6 +1475,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                                               <Check className="w-3 h-3" /> ปฏิบัติ
                                                             </button>
                                                             <button
+                                                              type="button"
                                                               onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
                                                               className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
                                                                 sNotComplied ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
@@ -1424,6 +1513,34 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         </div>
                       );
                     })}
+
+                    {/* ปุ่มกดบันทึกและส่งออกหลังประเมินเสร็จ (ข้อมูลในเว็บยังอยู่ครบ และเพิ่มประวัติใหม่ในชีต) */}
+                    <div className="bg-white rounded-2xl p-4 border-2 border-teal-500 shadow-md space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold font-prompt text-slate-800">สรุปผลการประเมินเตียง {selectedPatient.bed}</span>
+                        <span className="font-bold font-prompt text-teal-700">{currentRawScore}/{currentTotalItems} คะแนน ({currentProg}%)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        เมื่อกดปุ่มด้านล่าง ระบบจะบันทึกประวัติลง Google Sheets โดยข้อมูลผู้ป่วยบนหน้าเว็บจะยังคงอยู่ครบถ้วน
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveAndExportPatient(selectedPatient)}
+                        disabled={isSyncing}
+                        className="w-full bg-teal-600 hover:bg-teal-700 active:scale-[0.99] disabled:bg-teal-400 text-white font-prompt font-bold text-sm py-3.5 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Send className="w-4 h-4" />
+                        {isSyncing ? 'กำลังบันทึกและส่งออกลง Sheets...' : 'บันทึกและส่งออกข้อมูลลง Sheets'}
+                      </button>
+                      <a
+                        href={sheetViewLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-prompt font-semibold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" /> เปิดดูตาราง Google Sheets
+                      </a>
+                    </div>
                   </div>
                 )}
 
@@ -1432,6 +1549,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold font-prompt text-slate-800">สรุปส่งเวรตาม WHAPO + S & Weaning Protocol (อญ.3)</h3>
                       <button
+                        type="button"
                         onClick={() => handleCopyNotes(generateHandoverNote(selectedPatient))}
                         className="bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-prompt px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 border border-teal-200 transition-colors"
                       >
@@ -1442,7 +1560,15 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-sarabun whitespace-pre-line leading-relaxed">
                       {generateHandoverNote(selectedPatient)}
                     </div>
-                    <p className="text-[11px] text-slate-400">ข้อความสรุปส่งเวรแสดงคะแนนรวม (เต็ม 16 คะแนน) % ความเสี่ยงอัตโนมัติ และรายการ ปฏิบัติ / ไม่ปฏิบัติ ครบถ้วน</p>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAndExportPatient(selectedPatient)}
+                      disabled={isSyncing}
+                      className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt font-bold text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Send className="w-4 h-4" />
+                      {isSyncing ? 'กำลังบันทึกและส่งออก...' : 'บันทึกและส่งออกข้อมูลลง Sheets'}
+                    </button>
                   </div>
                 )}
 
@@ -1582,6 +1708,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
         <nav className="absolute bottom-0 inset-x-0 bg-white border-t border-teal-100 px-2 py-2 flex items-center justify-around shadow-lg z-30">
           <button 
+            type="button"
             onClick={() => { setCurrentTab('home'); setSelectedPatientId(null); }}
             className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors ${
               currentTab === 'home' && !selectedPatientId ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
@@ -1592,6 +1719,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </button>
 
           <button 
+            type="button"
             onClick={() => { setCurrentTab('beds'); setSelectedPatientId(null); }}
             className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors relative ${
               currentTab === 'beds' ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
@@ -1607,6 +1735,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </button>
 
           <button 
+            type="button"
             onClick={() => { setCurrentTab('guide'); setSelectedPatientId(null); }}
             className={`flex flex-col items-center gap-1 py-1 px-6 rounded-xl transition-colors ${
               currentTab === 'guide' ? 'text-teal-700 font-bold' : 'text-slate-400 hover:text-slate-600'
@@ -1617,12 +1746,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </button>
         </nav>
 
+        {/* Modal เพิ่มผู้ป่วย */}
         {showAddModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">เพิ่มผู้ป่วยใหม่ (หอผู้ป่วย อญ.3)</h3>
-                <button onClick={() => setShowAddModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                <button type="button" onClick={() => setShowAddModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1692,19 +1822,20 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   disabled={isSavingNewBed}
                   className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-prompt text-xs py-3 rounded-xl shadow-md transition-colors mt-2"
                 >
-                  {isSavingNewBed ? 'กำลังบันทึกข้อมูลลง Sheets...' : 'บันทึกข้อมูลผู้ป่วยลง Sheets'}
+                  {isSavingNewBed ? 'กำลังบันทึกข้อมูลลง Sheets...' : 'เพิ่มผู้ป่วยและบันทึกลง Sheets'}
                 </button>
               </form>
             </div>
           </div>
         )}
 
+        {/* Modal ตั้งค่าพยาบาลและเวร */}
         {showNurseModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">ตั้งค่าผู้ประเมินและเวรปฏิบัติงาน</h3>
-                <button onClick={() => setShowNurseModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                <button type="button" onClick={() => setShowNurseModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1755,6 +1886,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setShowNurseModal(false)}
                   className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors mt-2"
                 >
@@ -1765,12 +1897,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </div>
         )}
 
+        {/* Modal ตั้งค่า Google Sheets */}
         {showCloudModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">เชื่อมต่อฐานข้อมูล Google Sheets</h3>
-                <button onClick={() => setShowCloudModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                <button type="button" onClick={() => setShowCloudModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1806,15 +1939,16 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                 <div className="pt-1 flex flex-col gap-2">
                   <button
+                    type="button"
                     onClick={() => {
                       localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
                       localStorage.setItem('vap_google_sheet_view_link', sheetViewLink);
-                      fetchFromGoogleSheets(sheetUrlInput, false);
+                      fetchFromGoogleSheets(sheetUrlInput, true);
                       setShowCloudModal(false);
                     }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors"
                   >
-                    บันทึกการตั้งค่าและซิงค์ข้อมูล
+                    บันทึกการตั้งค่าและดึงข้อมูลจาก Sheets
                   </button>
                   <a
                     href={sheetViewLink}
@@ -1830,32 +1964,40 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
           </div>
         )}
 
-        {deleteConfirmId && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
+        {/* Modal ยืนยันการลบเตียงออกจากหน้าเว็บเท่านั้น (ข้อมูลใน Sheets ยังอยู่ครบ) */}
+        {deleteTargetPatient && (
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4 font-sarabun border-2 border-rose-200">
               <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-6 h-6" />
+                <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold font-prompt text-slate-800">ยืนยันการลบเตียง / จำหน่ายผู้ป่วย?</h3>
-              <p className="text-xs text-slate-500">
-                คุณต้องการลบข้อมูลเตียงนี้ออกจาก Google Sheets และระบบหอผู้ป่วย อญ.3 หรือไม่
-              </p>
-              <div className="flex gap-2 pt-2">
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-bold font-prompt text-slate-800">
+                  นำเตียง {deleteTargetPatient.bed} ออกจากหน้าเว็บ?
+                </h3>
+                <p className="text-xs font-semibold text-slate-700">
+                  {deleteTargetPatient.name} (HN: {deleteTargetPatient.hn})
+                </p>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-[11px] text-emerald-900 text-left leading-relaxed">
+                  ✅ <strong>ข้อมูลใน Google Sheets จะไม่ถูกลบ:</strong> ประวัติการประเมินที่เคยส่งออกไว้จะยังคงอยู่ในตาราง Google Sheets ครบถ้วนทุกแถว
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
                 <button
                   type="button"
                   disabled={isDeletingBed}
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
+                  onClick={() => setDeleteTargetPatient(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt font-semibold py-2.5 rounded-xl transition-colors"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="button"
                   disabled={isDeletingBed}
-                  onClick={() => handleDeletePatient(deleteConfirmId)}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
+                  onClick={executeDeletePatientFromWeb}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt font-bold py-2.5 rounded-xl shadow-md transition-colors"
                 >
-                  {isDeletingBed ? 'กำลังลบ...' : 'ยืนยันลบ'}
+                  {isDeletingBed ? 'กำลังนำออก...' : 'ยืนยันนำออกจากเว็บ'}
                 </button>
               </div>
             </div>

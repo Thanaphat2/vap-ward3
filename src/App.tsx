@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwwlA5tmUzfQ1P4JSgjR_GGGjTQdoQ5VoAtdvmy79o6tDESucuTCLsb26Az4RVvkj5Tiw/exec";
+const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw_iIAr-Fcdkx1Wx16IHk1Wcti4-QindrRMuLhYHLH-IGyCoO4zn1JhTmbV3S-f_eai/exec";
 const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=sharing";
 
 const decodeSymbols = (str: string) => {

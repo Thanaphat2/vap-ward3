@@ -35,8 +35,9 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw_iIAr-Fcdkx1Wx16IHk1Wcti4-QindrRMuLhYHLH-IGyCoO4zn1JhTmbV3S-f_eai/exec";
-const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=sharing";
+// ใส่ URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets ของคุณที่นี่
+const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwwlA5tmUzfQ1P4JSgjR_GGGjTQdoQ5VoAtdvmy79o6tDESucuTCLsb26Az4RVvkj5Tiw/exec";
+const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1cjMkr0wsqzq1LfzyATBEnR7abgpQlqBkzA3NAQC76Ls/edit";
 
 const decodeSymbols = (str: string) => {
   if (!str) return '';
@@ -87,6 +88,7 @@ interface Patient {
   lastAssessedBy?: string;
   lastAssessedShift?: string;
   lastAssessedTime?: string;
+  updatedAt?: number;
 }
 
 const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
@@ -136,7 +138,6 @@ const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
 
 const MAX_SCORE = 16;
 
-// คำนวณคะแนนดิบ (ข้อละ 1 คะแนน เต็ม 16 คะแนน)
 const calculateRawScore = (items: ChecklistItem[]) => {
   if (!items || items.length === 0) return 0;
   return items.filter(i => i.status === 'complied').length;
@@ -242,7 +243,8 @@ const migratePatient = (p: any): Patient => {
     progresses,
     lastAssessedBy: p.lastAssessedBy || 'พว.กานดา',
     lastAssessedShift: p.lastAssessedShift || 'เวรเช้า',
-    lastAssessedTime: p.lastAssessedTime || '08:30 น.'
+    lastAssessedTime: p.lastAssessedTime || '08:30 น.',
+    updatedAt: p.updatedAt || 0
   };
 };
 
@@ -261,6 +263,7 @@ export default function App() {
   const [showWeaningProtocolSurvey, setShowWeaningProtocolSurvey] = useState(false);
   const [expandedAlertBeds, setExpandedAlertBeds] = useState<Record<string, boolean>>({});
   const [isSavingNewBed, setIsSavingNewBed] = useState(false);
+  const [isDeletingBed, setIsDeletingBed] = useState(false);
 
   const [activeShift, setActiveShift] = useState<'เวรเช้า' | 'เวรบ่าย' | 'เวรดึก'>(() => {
     try {
@@ -317,12 +320,15 @@ export default function App() {
     return [];
   });
 
-  const pendingSyncRef = useRef>(new Map());
+  // เก็บรายชื่อเตียงที่เพิ่งลบเพื่อป้องกันการเด้งกลับมาระหว่างรอ Google Sheets อัปเดต
+  const deletedIdsRef = useRef>(new Map());
   const lastWriteTimeRef = useRef<number>(0);
+  const inFlightSyncCountRef = useRef<number>(0);
 
   const sendUpsertToSheet = async (patient: Patient, targetUrl = sheetUrlInput) => {
     if (!targetUrl.trim()) return;
     lastWriteTimeRef.current = Date.now();
+    inFlightSyncCountRef.current += 1;
     setIsSyncing(true);
     setCloudStatusMsg('กำลังบันทึกลง Sheets...');
     try {
@@ -334,24 +340,82 @@ export default function App() {
       });
       lastWriteTimeRef.current = Date.now();
       setIsSheetConnected(true);
-      setCloudStatusMsg('บันทึกลง Google Sheets แล้ว');
+      setCloudStatusMsg('บันทึกข้อมูลเรียบร้อย');
     } catch (e) {
       console.error('Sync error:', e);
       setCloudStatusMsg('ส่งข้อมูลไป Sheets ขัดข้อง');
     } finally {
-      setIsSyncing(false);
+      inFlightSyncCountRef.current = Math.max(0, inFlightSyncCountRef.current - 1);
+      if (inFlightSyncCountRef.current === 0) {
+        setIsSyncing(false);
+      }
     }
   };
 
-  const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput) => {
+  // ผสานข้อมูลจาก Sheets กับข้อมูลในเครื่อง โดยยึดข้อมูลที่ใหม่กว่า (updatedAt) และกรองเตียงที่ลบออกไปแล้ว
+  const mergeRemotePatients = (remoteRawList: any[]) => {
+    const now = Date.now();
+    // ล้างรายการลบที่เกิน 60 วินาที
+    for (const [delId, delTime] of deletedIdsRef.current.entries()) {
+      if (now - delTime > 60000) {
+        deletedIdsRef.current.delete(delId);
+      }
+    }
+
+    const remoteMigrated = remoteRawList
+      .map(migratePatient)
+      .filter(p => !deletedIdsRef.current.has(p.id));
+
+    setPatients(prevLocal => {
+      const localMap = new Map<string, Patient>();
+      prevLocal.forEach(lp => {
+        if (!deletedIdsRef.current.has(lp.id)) {
+          localMap.set(lp.id, lp);
+        }
+      });
+
+      const mergedMap = new Map<string, Patient>();
+
+      // ตรวจสอบข้อมูลจากฝั่ง Sheets
+      remoteMigrated.forEach(rp => {
+        const lp = localMap.get(rp.id);
+        if (lp && (lp.updatedAt || 0) > (rp.updatedAt || 0)) {
+          // ข้อมูลในเครื่องเพิ่งแก้ไขใหม่กว่าใน Sheets ให้คงค่าในเครื่องไว้
+          mergedMap.set(rp.id, lp);
+        } else {
+          mergedMap.set(rp.id, rp);
+        }
+      });
+
+      // เผื่อมีเตียงที่เพิ่งสร้างใหม่ในเครื่องแล้วยังไม่ขึ้นใน Sheets (ภายใน 30 วินาทีล่าสุด)
+      localMap.forEach((lp, id) => {
+        if (!mergedMap.has(id) && (now - (lp.updatedAt || 0) < 30000)) {
+          mergedMap.set(id, lp);
+        }
+      });
+
+      const finalList = Array.from(mergedMap.values()).sort((a, b) =>
+        a.bed.localeCompare(b.bed, 'th', { numeric: true })
+      );
+      try {
+        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(finalList));
+      } catch {}
+      return finalList;
+    });
+  };
+
+  const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput, silent = false) => {
     if (!targetUrl.trim()) {
       setIsSheetConnected(false);
       setCloudStatusMsg('ยังไม่ได้ใส่ URL (ใช้ Local)');
       return;
     }
 
-    setIsSyncing(true);
-    setCloudStatusMsg('กำลังดึงข้อมูลล่าสุดจาก Sheets...');
+    if (!silent) {
+      setIsSyncing(true);
+      setCloudStatusMsg('กำลังดึงข้อมูลล่าสุด...');
+    }
+
     try {
       const separator = targetUrl.includes('?') ? '&' : '?';
       const freshUrl = `${targetUrl.trim()}${separator}t=${Date.now()}`;
@@ -364,92 +428,41 @@ export default function App() {
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
       if (Array.isArray(data)) {
-        const migrated = data.map(migratePatient);
-        migrated.sort((a, b) => a.bed.localeCompare(b.bed, 'th', { numeric: true }));
-        setPatients(migrated);
-        localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migrated));
+        mergeRemotePatients(data);
         setIsSheetConnected(true);
         setCloudStatusMsg('ซิงค์ข้อมูลตรงกันทุกเครื่องแล้ว');
       }
     } catch (err) {
       console.error('Error fetching from Google Sheets:', err);
       setIsSheetConnected(false);
-      setCloudStatusMsg('เชื่อมต่อ Sheets ไม่สำเร็จ (ใช้ข้อมูลสำรอง)');
+      setCloudStatusMsg('เชื่อมต่อ Sheets ไม่สำเร็จ (ใช้ข้อมูลในเครื่อง)');
     } finally {
-      setIsSyncing(false);
+      if (!silent && inFlightSyncCountRef.current === 0) {
+        setIsSyncing(false);
+      }
     }
   };
 
   useEffect(() => {
     localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
-    fetchFromGoogleSheets(sheetUrlInput);
+    fetchFromGoogleSheets(sheetUrlInput, false);
 
+    // ซิงค์อัตโนมัติทุก 10 วินาที
     const interval = setInterval(() => {
-      const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 6000;
-      if (sheetUrlInput.trim() && pendingSyncRef.current.size === 0 && !isRecentlyWritten) {
-        const separator = sheetUrlInput.includes('?') ? '&' : '?';
-        const freshUrl = `${sheetUrlInput.trim()}${separator}t=${Date.now()}`;
-
-        fetch(freshUrl, { method: 'GET', redirect: 'follow', cache: 'no-store' })
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data) && pendingSyncRef.current.size === 0 && (Date.now() - lastWriteTimeRef.current >= 6000)) {
-              const migrated = data.map(migratePatient);
-              migrated.sort((a, b) => a.bed.localeCompare(b.bed, 'th', { numeric: true }));
-              setPatients(migrated);
-              localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migrated));
-              setIsSheetConnected(true);
-              setCloudStatusMsg('ซิงค์ข้อมูลตรงกันทุกเครื่องแล้ว');
-            }
-          })
-          .catch(() => {});
+      const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 5000;
+      if (sheetUrlInput.trim() && inFlightSyncCountRef.current === 0 && !isRecentlyWritten) {
+        fetchFromGoogleSheets(sheetUrlInput, true);
       }
     }, 10000);
+
     return () => clearInterval(interval);
   }, [sheetUrlInput]);
-
-  useEffect(() => {
-    if (!sheetUrlInput.trim()) return;
-    const timer = setTimeout(async () => {
-      const entries = Array.from(pendingSyncRef.current.entries());
-      if (entries.length === 0) return;
-
-      lastWriteTimeRef.current = Date.now();
-      setIsSyncing(true);
-      setCloudStatusMsg('กำลังบันทึกลง Sheets...');
-      try {
-        for (const [, patient] of entries) {
-          await fetch(sheetUrlInput.trim(), {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'upsert', patient })
-          });
-        }
-        pendingSyncRef.current.clear();
-        lastWriteTimeRef.current = Date.now();
-        setIsSheetConnected(true);
-        setCloudStatusMsg('บันทึกลง Google Sheets แล้ว');
-      } catch (e) {
-        console.error('Sync error:', e);
-        setCloudStatusMsg('ส่งข้อมูลไป Sheets ขัดข้อง');
-      } finally {
-        setIsSyncing(false);
-      }
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [patients]);
-
-  const queueSyncPatient = (patient: Patient) => {
-    lastWriteTimeRef.current = Date.now();
-    pendingSyncRef.current.set(patient.id, patient);
-  };
 
   const selectedPatient = patients.find(p => p.id === selectedPatientId);
 
   const updateItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    const nowTs = Date.now();
     let updatedTarget: Patient | undefined;
 
     const updated = patients.map(p => {
@@ -473,7 +486,8 @@ export default function App() {
         progresses: { ...p.progresses, [shiftKey]: newProg },
         lastAssessedBy: nurseName,
         lastAssessedShift: activeShift,
-        lastAssessedTime: timeNow
+        lastAssessedTime: timeNow,
+        updatedAt: nowTs
       };
       return updatedTarget;
     });
@@ -481,12 +495,14 @@ export default function App() {
     setPatients(updated);
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
     if (updatedTarget) {
-      queueSyncPatient(updatedTarget);
+      // ส่งขึ้น Google Sheets ทันทีไม่หน่วงเวลา ป้องกันรีเฟรชแล้วข้อมูลหาย
+      sendUpsertToSheet(updatedTarget);
     }
   };
 
   const updateWeaningItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    const nowTs = Date.now();
     let updatedTarget: Patient | undefined;
 
     const updated = patients.map(p => {
@@ -504,7 +520,8 @@ export default function App() {
         weaningSurveys: { ...p.weaningSurveys, [shiftKey]: surveyItems },
         lastAssessedBy: nurseName,
         lastAssessedShift: activeShift,
-        lastAssessedTime: timeNow
+        lastAssessedTime: timeNow,
+        updatedAt: nowTs
       };
       return updatedTarget;
     });
@@ -512,11 +529,12 @@ export default function App() {
     setPatients(updated);
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
     if (updatedTarget) {
-      queueSyncPatient(updatedTarget);
+      sendUpsertToSheet(updatedTarget);
     }
   };
 
   const updateWeaningItemNote = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, noteText: string) => {
+    const nowTs = Date.now();
     let updatedTarget: Patient | undefined;
 
     const updated = patients.map(p => {
@@ -530,7 +548,8 @@ export default function App() {
 
       updatedTarget = {
         ...p,
-        weaningSurveys: { ...p.weaningSurveys, [shiftKey]: surveyItems }
+        weaningSurveys: { ...p.weaningSurveys, [shiftKey]: surveyItems },
+        updatedAt: nowTs
       };
       return updatedTarget;
     });
@@ -538,13 +557,16 @@ export default function App() {
     setPatients(updated);
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
     if (updatedTarget) {
-      queueSyncPatient(updatedTarget);
+      sendUpsertToSheet(updatedTarget);
     }
   };
 
   const handleDeletePatient = async (patientId: string) => {
+    setIsDeletingBed(true);
     lastWriteTimeRef.current = Date.now();
-    pendingSyncRef.current.delete(patientId);
+    deletedIdsRef.current.set(patientId, Date.now());
+
+    const targetPt = patients.find(p => p.id === patientId);
     const updated = patients.filter(p => p.id !== patientId);
     setPatients(updated);
     setDeleteConfirmId(null);
@@ -552,19 +574,31 @@ export default function App() {
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
     
     if (sheetUrlInput.trim()) {
+      inFlightSyncCountRef.current += 1;
       setIsSyncing(true);
+      setCloudStatusMsg('กำลังลบเตียงออกจาก Sheets...');
       try {
         await fetch(sheetUrlInput.trim(), {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'delete', patientId })
+          body: JSON.stringify({
+            action: 'delete',
+            patientId,
+            bed: targetPt?.bed || '',
+            hn: targetPt?.hn || ''
+          })
         });
         lastWriteTimeRef.current = Date.now();
-      } catch {} finally {
+        setCloudStatusMsg('ลบเตียงเรียบร้อยแล้ว');
+      } catch (e) {
+        console.error('Delete error:', e);
+      } finally {
+        inFlightSyncCountRef.current = Math.max(0, inFlightSyncCountRef.current - 1);
         setIsSyncing(false);
       }
     }
+    setIsDeletingBed(false);
   };
 
   const [newBed, setNewBed] = useState('B01');
@@ -603,7 +637,8 @@ export default function App() {
       progresses: { morning: 0, afternoon: 0, night: 0 },
       lastAssessedBy: nurseName,
       lastAssessedShift: activeShift,
-      lastAssessedTime: timeNow
+      lastAssessedTime: timeNow,
+      updatedAt: Date.now()
     };
 
     const updated = [newPt, ...patients].sort((a, b) => a.bed.localeCompare(b.bed, 'th', { numeric: true }));
@@ -717,7 +752,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => fetchFromGoogleSheets(sheetUrlInput)}
+                onClick={() => fetchFromGoogleSheets(sheetUrlInput, false)}
                 disabled={isSyncing}
                 className="p-1 rounded-full bg-teal-800 hover:bg-teal-600 text-teal-100 transition-colors"
                 title="รีเฟรชข้อมูลจาก Google Sheets"
@@ -734,7 +769,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 title="ตั้งค่า Google Sheets"
               >
                 {isSheetConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
-                <span>{isSyncing ? 'กำลังซิงค์...' : (isSheetConnected ? 'Sheets' : 'Local')}</span>
+                <span>{isSyncing ? 'กำลังบันทึก...' : (isSheetConnected ? 'Sheets' : 'Local')}</span>
               </button>
             </div>
           </div>
@@ -1014,17 +1049,19 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         }`}
                       >
                         <button
+                          type="button"
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             setDeleteConfirmId(patient.id);
                           }}
-                          className="absolute top-3 right-3 w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors z-10"
+                          className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition-colors z-20"
                           title="ลบเตียง"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
 
-                        <div className="flex items-start justify-between pr-8">
+                        <div className="flex items-start justify-between pr-9">
                           <div className="flex items-center gap-3">
                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-sm font-prompt ${
                               riskTier.isHighRisk ? 'bg-rose-100 text-rose-700' : 'bg-teal-100 text-teal-700'
@@ -1100,12 +1137,21 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   >
                     <ArrowLeft className="w-4 h-4" /> กลับ
                   </button>
-                  <button 
-                    onClick={() => setDeleteConfirmId(selectedPatient.id)}
-                    className="flex items-center gap-1.5 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" /> ลบเตียงนี้
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button 
+                      onClick={() => sendUpsertToSheet(selectedPatient)}
+                      disabled={isSyncing}
+                      className="flex items-center gap-1 text-xs font-prompt font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors"
+                    >
+                      <Cloud className="w-3.5 h-3.5" /> {isSyncing ? 'กำลังบันทึก...' : 'บันทึกซิงค์'}
+                    </button>
+                    <button 
+                      onClick={() => setDeleteConfirmId(selectedPatient.id)}
+                      className="flex items-center gap-1 text-xs font-prompt font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> ลบเตียง
+                    </button>
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
@@ -1572,7 +1618,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
         </nav>
 
         {showAddModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">เพิ่มผู้ป่วยใหม่ (หอผู้ป่วย อญ.3)</h3>
@@ -1654,7 +1700,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
         )}
 
         {showNurseModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">ตั้งค่าผู้ประเมินและเวรปฏิบัติงาน</h3>
@@ -1720,7 +1766,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
         )}
 
         {showCloudModal && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-bold font-prompt text-slate-800">เชื่อมต่อฐานข้อมูล Google Sheets</h3>
@@ -1763,7 +1809,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     onClick={() => {
                       localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
                       localStorage.setItem('vap_google_sheet_view_link', sheetViewLink);
-                      fetchFromGoogleSheets(sheetUrlInput);
+                      fetchFromGoogleSheets(sheetUrlInput, false);
                       setShowCloudModal(false);
                     }}
                     className="w-full bg-teal-600 hover:bg-teal-700 text-white font-prompt text-xs py-2.5 rounded-xl shadow-md transition-colors"
@@ -1785,7 +1831,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
         )}
 
         {deleteConfirmId && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-200 font-sarabun">
               <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
                 <AlertTriangle className="w-6 h-6" />
@@ -1796,16 +1842,20 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
               </p>
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
+                  disabled={isDeletingBed}
                   onClick={() => setDeleteConfirmId(null)}
                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
                 >
                   ยกเลิก
                 </button>
                 <button
+                  type="button"
+                  disabled={isDeletingBed}
                   onClick={() => handleDeletePatient(deleteConfirmId)}
                   className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
                 >
-                  ยืนยันลบ
+                  {isDeletingBed ? 'กำลังลบ...' : 'ยืนยันลบ'}
                 </button>
               </div>
             </div>

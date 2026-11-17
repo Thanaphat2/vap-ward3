@@ -340,9 +340,17 @@ export default function App() {
     }
 
     setIsSyncing(true);
-    setCloudStatusMsg('กำลังดึงข้อมูลจาก Sheets...');
+    setCloudStatusMsg('กำลังดึงข้อมูลล่าสุดจาก Sheets...');
     try {
-      const response = await fetch(targetUrl.trim(), { cache: 'no-store' });
+      // เติม ?t= เพื่อบังคับไม่ให้เบราว์เซอร์จำค่าเก่า (Bypass Cache) ทำให้เปิดเครื่องอื่นเห็นข้อมูลล่าสุดทันที
+      const separator = targetUrl.includes('?') ? '&' : '?';
+      const freshUrl = `${targetUrl.trim()}${separator}t=${Date.now()}`;
+
+      const response = await fetch(freshUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        cache: 'no-store'
+      });
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
       if (Array.isArray(data)) {
@@ -351,7 +359,7 @@ export default function App() {
         setPatients(migrated);
         localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migrated));
         setIsSheetConnected(true);
-        setCloudStatusMsg('ซิงค์ Google Sheets สำเร็จ');
+        setCloudStatusMsg('ซิงค์ข้อมูลตรงกันทุกเครื่องแล้ว');
       }
     } catch (err) {
       console.error('Error fetching from Google Sheets:', err);
@@ -366,25 +374,29 @@ export default function App() {
     localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
     fetchFromGoogleSheets(sheetUrlInput);
 
+    // ซิงค์ข้อมูลระหว่างเครื่องอัตโนมัติทุกๆ 10 วินาที
     const interval = setInterval(() => {
-      // ป้องกันการดึงข้อมูลเก่ามาทับหากเพิ่งมีการบันทึกภายใน 8 วินาทีที่ผ่านมา หรือยังมีคิวค้างส่ง
-      const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 8000;
+      // ป้องกันการดึงข้อมูลเก่ามาทับหากเพิ่งมีการบันทึกภายใน 6 วินาทีที่ผ่านมา หรือยังมีคิวค้างส่ง
+      const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 6000;
       if (sheetUrlInput.trim() && pendingSyncRef.current.size === 0 && !isRecentlyWritten) {
-        fetch(sheetUrlInput.trim(), { cache: 'no-store' })
+        const separator = sheetUrlInput.includes('?') ? '&' : '?';
+        const freshUrl = `${sheetUrlInput.trim()}${separator}t=${Date.now()}`;
+
+        fetch(freshUrl, { method: 'GET', redirect: 'follow', cache: 'no-store' })
           .then(res => res.json())
           .then(data => {
-            if (Array.isArray(data) && pendingSyncRef.current.size === 0 && (Date.now() - lastWriteTimeRef.current >= 8000)) {
+            if (Array.isArray(data) && pendingSyncRef.current.size === 0 && (Date.now() - lastWriteTimeRef.current >= 6000)) {
               const migrated = data.map(migratePatient);
               migrated.sort((a, b) => a.bed.localeCompare(b.bed, 'th', { numeric: true }));
               setPatients(migrated);
               localStorage.setItem('vap_ward_patients_f3', JSON.stringify(migrated));
               setIsSheetConnected(true);
-              setCloudStatusMsg('ซิงค์ Google Sheets สำเร็จ');
+              setCloudStatusMsg('ซิงค์ข้อมูลตรงกันทุกเครื่องแล้ว');
             }
           })
           .catch(() => {});
       }
-    }, 25000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [sheetUrlInput]);
 
@@ -591,7 +603,7 @@ export default function App() {
     setPatients(updated);
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
 
-    // บันทึกขึ้น Google Sheets ทันที ไม่ต้องรอ Debounce 3 วินาที
+    // บันทึกขึ้น Google Sheets ทันที ไม่ต้องรอ Debounce
     await sendUpsertToSheet(newPt);
 
     setIsSavingNewBed(false);
@@ -1751,28 +1763,4 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold font-prompt text-slate-800">ยืนยันการลบเตียง / จำหน่ายผู้ป่วย?</h3>
-              <p className="text-xs text-slate-500">
-                คุณต้องการลบข้อมูลเตียงนี้ออกจาก Google Sheets และระบบหอผู้ป่วย อญ.3 หรือไม่
-              </p>
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={() => handleDeletePatient(deleteConfirmId)}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
-                >
-                  ยืนยันลบ
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
+              <p

@@ -1763,4 +1763,28 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold font-prompt text-slate-800">ยืนยันการลบเตียง / จำหน่ายผู้ป่วย?</h3>
-              <p
+              <p className="text-xs text-slate-500">
+                คุณต้องการลบข้อมูลเตียงนี้ออกจาก Google Sheets และระบบหอผู้ป่วย อญ.3 หรือไม่
+              </p>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-prompt py-2.5 rounded-xl transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={() => handleDeletePatient(deleteConfirmId)}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-prompt py-2.5 rounded-xl shadow-md transition-colors"
+                >
+                  ยืนยันลบ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

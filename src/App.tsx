@@ -105,8 +105,7 @@ const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
   { id: 'o-2', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ >1,500 ppm', status: 'pending' },
   { id: 'o-3', groupKey: 'O', groupTitle: 'O - ORAL CARE การทำความสะอาดช่องปาก', text: 'เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน', status: 'pending' },
   { id: 's-1', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า', status: 'pending' },
-  { id: 's-2', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ลดปริมาณการใช้ และหยุดยานอนหลับ', status: 'pending' },
-  { id: 's-3', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: '(ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)', status: 'pending' }
+  { id: 's-2', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)', status: 'pending' }
 ];
 
 const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
@@ -169,19 +168,25 @@ const getRiskTier = (progress: number) => {
 const migratePatient = (p: any): Patient => {
   const migrateList = (list: any[]) => {
     if (!list) return DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i }));
-    return list.map(i => {
-      let status = i.status;
-      if (!status) {
-        status = i.checked ? 'complied' : 'pending';
-      }
-      return {
-        id: i.id || ('item-' + Math.random()),
-        groupKey: i.groupKey || 'W',
-        groupTitle: decodeSymbols(i.groupTitle || 'W - WEAN การหย่าเครื่องช่วยหายใจ'),
-        text: decodeSymbols(i.text || ''),
-        status: (status as 'complied' | 'not_complied' | 'pending') || 'pending'
-      };
-    });
+    return list
+      .filter(i => i.id !== 's-3')
+      .map(i => {
+        let status = i.status;
+        if (!status) {
+          status = i.checked ? 'complied' : 'pending';
+        }
+        let itemText = decodeSymbols(i.text || '');
+        if (i.id === 's-2') {
+          itemText = 'ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)';
+        }
+        return {
+          id: i.id || ('item-' + Math.random()),
+          groupKey: i.groupKey || 'W',
+          groupTitle: decodeSymbols(i.groupTitle || 'W - WEAN การหย่าเครื่องช่วยหายใจ'),
+          text: itemText,
+          status: (status as 'complied' | 'not_complied' | 'pending') || 'pending'
+        };
+      });
   };
 
   const migrateSurvey = (list: any[]) => {
@@ -216,7 +221,7 @@ const migratePatient = (p: any): Patient => {
     night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
   };
 
-  const progresses = p.progresses || {
+  const progresses = {
     morning: calculateProgress(checklists.morning),
     afternoon: calculateProgress(checklists.afternoon),
     night: calculateProgress(checklists.night)
@@ -296,7 +301,6 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [cloudStatusMsg, setCloudStatusMsg] = useState<string>('เชื่อมต่อ Google Sheets แล้ว');
 
-  // โหลดข้อมูลสำรองในเครื่องมาก่อนทันทีระหว่างรอ Sheets โหลด
   const [patients, setPatients] = useState<Patient[]>(() => {
     try {
       const saved = localStorage.getItem('vap_ward_patients_f3');
@@ -305,7 +309,6 @@ export default function App() {
     return [];
   });
 
-  // แก้ไข Syntax Error ของ useRef และเพิ่มตัวล็อกเวลาซิงค์ไม่ให้ข้อมูลเก่าทับ
   const pendingSyncRef = useRef>(new Map());
   const lastWriteTimeRef = useRef<number>(0);
 
@@ -342,7 +345,6 @@ export default function App() {
     setIsSyncing(true);
     setCloudStatusMsg('กำลังดึงข้อมูลล่าสุดจาก Sheets...');
     try {
-      // เติม ?t= เพื่อบังคับไม่ให้เบราว์เซอร์จำค่าเก่า (Bypass Cache) ทำให้เปิดเครื่องอื่นเห็นข้อมูลล่าสุดทันที
       const separator = targetUrl.includes('?') ? '&' : '?';
       const freshUrl = `${targetUrl.trim()}${separator}t=${Date.now()}`;
 
@@ -374,9 +376,7 @@ export default function App() {
     localStorage.setItem('vap_google_sheet_url', sheetUrlInput);
     fetchFromGoogleSheets(sheetUrlInput);
 
-    // ซิงค์ข้อมูลระหว่างเครื่องอัตโนมัติทุกๆ 10 วินาที
     const interval = setInterval(() => {
-      // ป้องกันการดึงข้อมูลเก่ามาทับหากเพิ่งมีการบันทึกภายใน 6 วินาทีที่ผ่านมา หรือยังมีคิวค้างส่ง
       const isRecentlyWritten = Date.now() - lastWriteTimeRef.current < 6000;
       if (sheetUrlInput.trim() && pendingSyncRef.current.size === 0 && !isRecentlyWritten) {
         const separator = sheetUrlInput.includes('?') ? '&' : '?';
@@ -400,7 +400,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [sheetUrlInput]);
 
-  // Debounced Sync สำหรับการติ๊กเช็กลิสต์รัวๆ
   useEffect(() => {
     if (!sheetUrlInput.trim()) return;
     const timer = setTimeout(async () => {
@@ -603,7 +602,6 @@ export default function App() {
     setPatients(updated);
     try { localStorage.setItem('vap_ward_patients_f3', JSON.stringify(updated)); } catch {}
 
-    // บันทึกขึ้น Google Sheets ทันที ไม่ต้องรอ Debounce
     await sendUpsertToSheet(newPt);
 
     setIsSavingNewBed(false);
@@ -1496,8 +1494,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-indigo-600 font-sarabun">
                     <li>ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า</li>
-                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ</li>
-                    <li>(ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)</li>
+                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)</li>
                   </ul>
                 </div>
               </div>

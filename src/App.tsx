@@ -134,9 +134,17 @@ const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
   { id: 'w4-5', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.5 มีการแจ้งแพทย์ก่อน off tube', status: 'pending', note: '' }
 ];
 
+const MAX_SCORE = 16;
+
+// คำนวณคะแนนดิบ (ข้อละ 1 คะแนน เต็ม 16 คะแนน)
+const calculateRawScore = (items: ChecklistItem[]) => {
+  if (!items || items.length === 0) return 0;
+  return items.filter(i => i.status === 'complied').length;
+};
+
 const calculateProgress = (items: ChecklistItem[]) => {
   if (!items || items.length === 0) return 0;
-  const compliedCount = items.filter(i => i.status === 'complied').length;
+  const compliedCount = calculateRawScore(items);
   return Math.round((compliedCount / items.length) * 100);
 };
 
@@ -621,12 +629,14 @@ export default function App() {
     const shiftName = shiftKey === 'morning' ? 'เวรเช้า' : shiftKey === 'afternoon' ? 'เวรบ่าย' : 'เวรดึก';
     const shiftItems = pt.checklists[shiftKey] || DEFAULT_WHAPOS_CHECKLIST;
     const shiftProg = pt.progresses[shiftKey] || 0;
+    const rawScore = calculateRawScore(shiftItems);
+    const totalItems = shiftItems.length || MAX_SCORE;
     const riskInfo = getRiskTier(shiftProg);
     const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY;
 
-    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ] ${decodeSymbols(i.text)}`);
-    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ] ${decodeSymbols(i.text)}`);
-    const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ] ${decodeSymbols(i.text)}`);
+    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ: 1 คะแนน] ${decodeSymbols(i.text)}`);
+    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ: 0 คะแนน] ${decodeSymbols(i.text)}`);
+    const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ: 0 คะแนน] ${decodeSymbols(i.text)}`);
 
     const surveyComplied = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
     const surveyNotComplied = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
@@ -634,17 +644,17 @@ export default function App() {
     return `[สรุปส่งเวร หอผู้ป่วยอายุรกรรมหญิง 3 (อญ.3)]
 ผู้ประเมิน: ${pt.lastAssessedBy || nurseName} (${pt.lastAssessedShift || shiftName}) เวลา ${pt.lastAssessedTime || '09:00 น.'}
 เตียง: ${pt.bed} | HN: ${pt.hn} | ${pt.name} (${pt.gender} ${pt.age} ปี)
-Ventilator Day: ${pt.ventDay} | Compliance (${shiftName}): ${shiftProg}%
+Ventilator Day: ${pt.ventDay} | คะแนนรวม (${shiftName}): ${rawScore}/${totalItems} คะแนน (${shiftProg}%)
 ประเมินความเสี่ยง VAP: [${riskInfo.label}] - ${riskInfo.evalLevel}
 
-รายการประเมิน WHAPO + S (${shiftName}):
-[ปฏิบัติ (${compliedItems.length})]:
+รายการประเมิน WHAPO + S (${shiftName}) [ข้อละ 1 คะแนน เต็ม ${totalItems} คะแนน]:
+[ปฏิบัติ (${compliedItems.length}/${totalItems} คะแนน)]:
 ${compliedItems.length > 0 ? compliedItems.join('\n') : '  (ไม่มี)'}
 
-[ไม่ปฏิบัติ (${notCompliedItems.length})]:
+[ไม่ปฏิบัติ (${notCompliedItems.length} ข้อ)]:
 ${notCompliedItems.length > 0 ? notCompliedItems.join('\n') : '  (ไม่มี)'}
 
-[รอดำเนินการ (${pendingItems.length})]:
+[รอดำเนินการ (${pendingItems.length} ข้อ)]:
 ${pendingItems.length > 0 ? pendingItems.join('\n') : '  (ไม่มี)'}
 
 --- แบบสำรวจ Weaning Protocol สำหรับพยาบาลวิชาชีพ ---
@@ -795,7 +805,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         <p className="text-[10px] text-slate-600">
                           {bedAlerts.length > 0 
                             ? `พบ ${bedAlerts.length} เตียงที่ยังมีรายการค้างทำ/ไม่ปฏิบัติ (แตะที่เตียงเพื่อเข้าไปประเมิน)` 
-                            : 'เยี่ยมมาก! ผู้ป่วยทุกรายได้รับการประเมิน WHAPO + S ครบ 100%'}
+                            : 'เยี่ยมมาก! ผู้ป่วยทุกรายได้รับการประเมิน WHAPO + S ครบ 16/16 คะแนน (100%)'}
                         </p>
                       </div>
                     </div>
@@ -891,7 +901,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       </div>
                       <div>
                         <div className="text-sm font-bold font-prompt text-slate-800">รายเตียง (Bed List - อญ.3)</div>
-                        <div className="text-xs text-slate-500">ประเมิน WHAPO + S คำนวณความเสี่ยงอัตโนมัติ</div>
+                        <div className="text-xs text-slate-500">ประเมิน WHAPO + S (16 คะแนน) คำนวณความเสี่ยงอัตโนมัติ</div>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
@@ -907,7 +917,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       </div>
                       <div>
                         <div className="text-sm font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPOS Reference</div>
-                        <div className="text-xs text-slate-500">เกณฑ์การให้คะแนนและความเสี่ยงอัตโนมัติ</div>
+                        <div className="text-xs text-slate-500">เกณฑ์การให้คะแนน (เต็ม 16) และความเสี่ยงอัตโนมัติ</div>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
@@ -991,6 +1001,8 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     const currentProg = patient.progresses?.[shiftProgKey] ?? 0;
                     const riskTier = getRiskTier(currentProg);
                     const shiftItems = patient.checklists?.[shiftProgKey] || DEFAULT_WHAPOS_CHECKLIST;
+                    const rawScore = calculateRawScore(shiftItems);
+                    const totalItems = shiftItems.length || MAX_SCORE;
                     const missedCount = shiftItems.filter(i => i.status !== 'complied').length;
                     
                     return (
@@ -1023,7 +1035,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="text-sm font-bold font-prompt text-slate-800">{patient.name}</h3>
                                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
-                                  {riskTier.label} ({currentProg}%)
+                                  {riskTier.label} ({rawScore}/{totalItems} คะแนน)
                                 </span>
                                 {missedCount > 0 && (
                                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200">
@@ -1041,9 +1053,9 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                         <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                           <div className="flex-1">
                             <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
-                              <span>WHAPO + S Score ({activeShift})</span>
+                              <span>คะแนน WHAPO + S ({activeShift})</span>
                               <span className={currentProg >= 80 ? 'text-emerald-600' : currentProg >= 60 ? 'text-amber-600' : 'text-rose-600'}>
-                                {currentProg}% ({riskTier.evalLevel.split(' ')[0]})
+                                {rawScore}/{totalItems} คะแนน ({currentProg}%)
                               </span>
                             </div>
                             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -1070,7 +1082,14 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
           {selectedPatientId && selectedPatient && (() => {
             const currentProg = selectedPatient.progresses?.[activeChecklistShift] ?? 0;
+            const currentShiftItems = selectedPatient.checklists?.[activeChecklistShift] || DEFAULT_WHAPOS_CHECKLIST;
+            const currentRawScore = calculateRawScore(currentShiftItems);
+            const currentTotalItems = currentShiftItems.length || MAX_SCORE;
             const riskTier = getRiskTier(currentProg);
+
+            const morningScore = calculateRawScore(selectedPatient.checklists?.morning || []);
+            const afternoonScore = calculateRawScore(selectedPatient.checklists?.afternoon || []);
+            const nightScore = calculateRawScore(selectedPatient.checklists?.night || []);
 
             return (
               <div className="space-y-4 font-sarabun">
@@ -1111,16 +1130,17 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     'bg-rose-50 border-rose-300 text-rose-950'
                   }`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm font-prompt flex-shrink-0 ${
-                        currentProg >= 80 ? 'bg-emerald-200 text-emerald-800' :
-                        currentProg >= 60 ? 'bg-amber-200 text-amber-800' :
-                        'bg-rose-200 text-rose-800'
+                      <div className={`px-2.5 py-2 rounded-xl flex flex-col items-center justify-center font-bold font-prompt flex-shrink-0 ${
+                        currentProg >= 80 ? 'bg-emerald-200 text-emerald-900' :
+                        currentProg >= 60 ? 'bg-amber-200 text-amber-900' :
+                        'bg-rose-200 text-rose-900'
                       }`}>
-                        {currentProg}%
+                        <span className="text-sm leading-none">{currentRawScore}/{currentTotalItems}</span>
+                        <span className="text-[10px] font-semibold mt-0.5">({currentProg}%)</span>
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold font-prompt">ประเมินความเสี่ยง VAP:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold font-prompt">คะแนนประเมิน VAP:</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${riskTier.badgeClass}`}>
                             {riskTier.label}
                           </span>
@@ -1140,7 +1160,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       subTab === 'bundle' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-800'
                     }`}
                   >
-                    ประเมิน WHAPO + S ({currentProg}%)
+                    ประเมิน WHAPO + S ({currentRawScore}/{currentTotalItems} คะแนน)
                   </button>
                   <button
                     onClick={() => setSubTab('notes')}
@@ -1161,7 +1181,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                           activeChecklistShift === 'morning' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
                         }`}
                       >
-                        <Sun className="w-3.5 h-3.5" /> เวรเช้า ({selectedPatient.progresses?.morning ?? 0}%)
+                        <Sun className="w-3.5 h-3.5" /> เช้า ({morningScore}/{MAX_SCORE})
                       </button>
                       <button
                         onClick={() => setActiveChecklistShift('afternoon')}
@@ -1169,7 +1189,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                           activeChecklistShift === 'afternoon' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
                         }`}
                       >
-                        <Sunset className="w-3.5 h-3.5" /> เวรบ่าย ({selectedPatient.progresses?.afternoon ?? 0}%)
+                        <Sunset className="w-3.5 h-3.5" /> บ่าย ({afternoonScore}/{MAX_SCORE})
                       </button>
                       <button
                         onClick={() => setActiveChecklistShift('night')}
@@ -1177,13 +1197,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                           activeChecklistShift === 'night' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:bg-teal-50'
                         }`}
                       >
-                        <Moon className="w-3.5 h-3.5" /> เวรดึก ({selectedPatient.progresses?.night ?? 0}%)
+                        <Moon className="w-3.5 h-3.5" /> ดึก ({nightScore}/{MAX_SCORE})
                       </button>
                     </div>
 
                     <div className="flex items-center justify-between px-1">
                       <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider font-prompt">
-                        WHAPO + S Bundle ({activeChecklistShift === 'morning' ? 'เวรเช้า' : activeChecklistShift === 'afternoon' ? 'เวรบ่าย' : 'เวรดึก'})
+                        WHAPO + S (ข้อละ 1 คะแนน เต็ม {currentTotalItems})
                       </h3>
                       <span className="text-xs font-semibold text-teal-700">
                         ผู้ประเมิน: {selectedPatient.lastAssessedBy || nurseName}
@@ -1206,8 +1226,8 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                               </span>
                               {groupTitle}
                             </h4>
-                            <span className="text-[11px] text-slate-500">
-                              ปฏิบัติแล้ว {groupCompliedCount}/{groupItems.length}
+                            <span className="text-[11px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
+                              {groupCompliedCount}/{groupItems.length} คะแนน
                             </span>
                           </div>
 
@@ -1226,10 +1246,21 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                       'bg-slate-50/60 border-slate-200'
                                     }`}
                                   >
-                                    <div className="flex-1">
+                                    <div className="flex-1 space-y-1">
                                       <p className="text-xs font-sarabun font-medium text-slate-800 leading-relaxed">
                                         {cleanText}
                                       </p>
+                                      <div>
+                                        <span className={`inline-block text-[10px] font-prompt font-bold px-2 py-0.5 rounded-md ${
+                                          isComplied 
+                                            ? 'bg-emerald-100 text-emerald-800' 
+                                            : isNotComplied 
+                                              ? 'bg-rose-100 text-rose-700' 
+                                              : 'bg-slate-200/70 text-slate-600'
+                                        }`}>
+                                          {isComplied ? '+1 คะแนน' : '0 คะแนน (ข้อละ 1 คะแนน)'}
+                                        </span>
+                                      </div>
                                     </div>
 
                                     <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1365,7 +1396,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 font-sarabun whitespace-pre-line leading-relaxed">
                       {generateHandoverNote(selectedPatient)}
                     </div>
-                    <p className="text-[11px] text-slate-400">ข้อความสรุปส่งเวรแสดงคะแนน % ความเสี่ยงอัตโนมัติ และรายการ ปฏิบัติ / ไม่ปฏิบัติ ครบถ้วน</p>
+                    <p className="text-[11px] text-slate-400">ข้อความสรุปส่งเวรแสดงคะแนนรวม (เต็ม 16 คะแนน) % ความเสี่ยงอัตโนมัติ และรายการ ปฏิบัติ / ไม่ปฏิบัติ ครบถ้วน</p>
                   </div>
                 )}
 
@@ -1377,15 +1408,15 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
             <div className="space-y-4 font-sarabun">
               <div>
                 <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Risk Tiers</h2>
-                <p className="text-xs text-slate-500">เกณฑ์การคำนวณระดับความเสี่ยงอัตโนมัติจากคะแนน % การปฏิบัติ</p>
+                <p className="text-xs text-slate-500">เกณฑ์การให้คะแนนข้อละ 1 คะแนน (คะแนนเต็ม 16 คะแนน) และระดับความเสี่ยงอัตโนมัติ</p>
               </div>
 
               <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold font-prompt text-teal-800">📋 เกณฑ์การประเมินระดับความเสี่ยง VAP อัตโนมัติ</h3>
+                <h3 className="text-xs font-bold font-prompt text-teal-800">📋 เกณฑ์การประเมินคะแนนและความเสี่ยง VAP (เต็ม 16 คะแนน)</h3>
                 <div className="space-y-2 text-xs text-slate-700 font-sarabun">
                   <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
                     <div>
-                      <strong className="text-emerald-800 font-prompt">คะแนน ≥ 80% (เสี่ยงน้อย):</strong>
+                      <strong className="text-emerald-800 font-prompt">13 - 16 คะแนน / ≥ 80% (เสี่ยงน้อย):</strong>
                       <div className="text-[11px] text-emerald-700">ระดับสูง / ดี / มาก (ผ่านเกณฑ์ระดับยอดเยี่ยม)</div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">เสี่ยงน้อย</span>
@@ -1393,7 +1424,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                   <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
                     <div>
-                      <strong className="text-amber-800 font-prompt">คะแนน 60 - 79% (เสี่ยงปานกลาง):</strong>
+                      <strong className="text-amber-800 font-prompt">10 - 12 คะแนน / 60 - 79% (เสี่ยงปานกลาง):</strong>
                       <div className="text-[11px] text-amber-700">ระดับปานกลาง (ผ่านเกณฑ์พื้นฐาน)</div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">เสี่ยงปานกลาง</span>
@@ -1401,7 +1432,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                   <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between">
                     <div>
-                      <strong className="text-rose-800 font-prompt">คะแนน &lt; 60% (เสี่ยงมาก):</strong>
+                      <strong className="text-rose-800 font-prompt">0 - 9 คะแนน / &lt; 60% (เสี่ยงมาก):</strong>
                       <div className="text-[11px] text-rose-700">ระดับต่ำ / ไม่ผ่านเกณฑ์ (ต้องได้รับการซ่อมเสริมหรือพัฒนาเพิ่ม)</div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">เสี่ยงมาก</span>
@@ -1414,13 +1445,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center font-prompt text-base">W</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">W - WEAN การหย่าเครื่องช่วยหายใจ</h4>
-                      <p className="text-[11px] text-slate-500">รวมแบบสำรวจ 4 หมวดสำหรับพยาบาลวิชาชีพ</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">W - WEAN การหย่าเครื่องช่วยหายใจ (2 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน รวมแบบสำรวจ 4 หมวดสำหรับพยาบาลวิชาชีพ</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-cyan-600 font-sarabun">
-                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน</li>
-                    <li>ใช้ weaning protocol (มีแบบสำรวจละเอียด 4 หมวด)</li>
+                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน (1 คะแนน)</li>
+                    <li>ใช้ weaning protocol (มีแบบสำรวจละเอียด 4 หมวด) (1 คะแนน)</li>
                   </ul>
                 </div>
 
@@ -1428,13 +1459,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center font-prompt text-base">H</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">H - HAND HYGIENE การทำความสะอาดมือ</h4>
-                      <p className="text-[11px] text-slate-500">สุขอนามัยมือเคร่งครัด</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">H - HAND HYGIENE การทำความสะอาดมือ (2 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน สุขอนามัยมือเคร่งครัด</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-emerald-600 font-sarabun">
-                    <li>ล้างมือ 7 ขั้นตอน</li>
-                    <li>ล้างมือ 5 moments</li>
+                    <li>ล้างมือ 7 ขั้นตอน (1 คะแนน)</li>
+                    <li>ล้างมือ 5 moments (1 คะแนน)</li>
                   </ul>
                 </div>
 
@@ -1442,15 +1473,15 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center font-prompt text-base">A</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก</h4>
-                      <p className="text-[11px] text-slate-500">ลดความเสี่ยงการสำลักน้ำย่อย</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">A - ASPIRATE PRECAUTIONS การป้องกันการสำลัก (4 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน ลดความเสี่ยงการสำลักน้ำย่อย</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-amber-600 font-sarabun">
-                    <li>ยกหัวเตียงสูง 30-45 องศา</li>
-                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร</li>
-                    <li>ประเมิน NG ก่อน feeds</li>
-                    <li>ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม.</li>
+                    <li>ยกหัวเตียงสูง 30-45 องศา (1 คะแนน)</li>
+                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร (1 คะแนน)</li>
+                    <li>ประเมิน NG ก่อน feeds (1 คะแนน)</li>
+                    <li>ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม. (1 คะแนน)</li>
                   </ul>
                 </div>
 
@@ -1458,14 +1489,14 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-800 font-bold flex items-center justify-center font-prompt text-base">P</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน</h4>
-                      <p className="text-[11px] text-slate-500">จัดการสาย circuit และอุปกรณ์</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">P - PREVENTION CONTAMINATION การป้องกันการปนเปื้อน (3 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน จัดการสาย circuit และอุปกรณ์</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-violet-600 font-sarabun">
-                    <li>เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย</li>
-                    <li>เทน้ำทิ้งสาย circuit ด้วย aseptic technique</li>
-                    <li>ดูดเสมหะเท่าที่จำเป็น</li>
+                    <li>เปลี่ยน ventilator circuit เมื่อเปื้อนสกปรก หรือเมื่อเปลี่ยนผู้ป่วย (1 คะแนน)</li>
+                    <li>เทน้ำทิ้งสาย circuit ด้วย aseptic technique (1 คะแนน)</li>
+                    <li>ดูดเสมหะเท่าที่จำเป็น (1 คะแนน)</li>
                   </ul>
                 </div>
 
@@ -1473,14 +1504,14 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-800 font-bold flex items-center justify-center font-prompt text-base">O</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">O - ORAL CARE การทำความสะอาดช่องปาก</h4>
-                      <p className="text-[11px] text-slate-500">ลดแบคทีเรียและ Biofilm ในช่องปาก</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">O - ORAL CARE การทำความสะอาดช่องปาก (3 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน ลดแบคทีเรียและ Biofilm ในช่องปาก</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-pink-600 font-sarabun">
-                    <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง</li>
-                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm</li>
-                    <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน</li>
+                    <li>ประเมินสุขภาพช่องปากด้วย OAG วันละ 1 ครั้ง (1 คะแนน)</li>
+                    <li>ใช้แปรงสีฟันที่มีขนแปรงอ่อนนุ่ม และยาสีฟันที่มีฟลูออไรด์ &gt;1,500 ppm (1 คะแนน)</li>
+                    <li>เช็ดช่องปากด้วย 0.9% NSS สลับกับการแปรงฟัน (1 คะแนน)</li>
                   </ul>
                 </div>
 
@@ -1488,13 +1519,13 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-800 font-bold flex items-center justify-center font-prompt text-base">S</div>
                     <div>
-                      <h4 className="text-xs font-bold font-prompt text-slate-800">S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง</h4>
-                      <p className="text-[11px] text-slate-500">ประเมินความตื่นตัวและลดขนาดยา</p>
+                      <h4 className="text-xs font-bold font-prompt text-slate-800">S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง (2 คะแนน)</h4>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน ประเมินความตื่นตัวและลดขนาดยา</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-indigo-600 font-sarabun">
-                    <li>ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า</li>
-                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)</li>
+                    <li>ประเมินการหยุดยานอนหลับ วันละครั้ง ช่วงเช้า (1 คะแนน)</li>
+                    <li>ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้) (1 คะแนน)</li>
                   </ul>
                 </div>
               </div>
@@ -1607,7 +1638,7 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                 </div>
 
                 <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-sarabun leading-relaxed">
-                  ℹ️ <strong>ระดับความเสี่ยง:</strong> จะคำนวณและอัปเดตอัตโนมัติจากผลการประเมินคะแนน WHAPO+S Bundle ในระบบ
+                  ℹ️ <strong>การให้คะแนน:</strong> ประเมินข้อละ 1 คะแนน (คะแนนเต็ม 16 คะแนน) ระบบจะคำนวณความเสี่ยงอัตโนมัติ
                 </div>
 
                 <button

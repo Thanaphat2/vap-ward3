@@ -39,7 +39,7 @@ import confetti from 'canvas-confetti';
 
 // URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets
 const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw-z2tM9gXQ28vN6nIst_nL7k5isZIyhGJm7AG_b2yHSPN3iAwLd1jfO3rJRw2j8Sby3A/exec";
-const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1cjMkr0wsqzq1LfzyATBEnR7abgpQlqBkzA3NAQC76Ls/edit";
+const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=drivesdk";
 
 const STORAGE_PATIENTS_KEY = 'vap_ward_patients_f3';
 const STORAGE_DELETED_IDS_KEY = 'vap_deleted_ids_f3';

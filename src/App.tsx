@@ -38,8 +38,8 @@ import {
 import confetti from 'canvas-confetti';
 
 // URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzeBUGocdif7Ydeh4Sv6JPcpizcVI2ine9KA22Cy0Cy5J1VE78czu6-8d5O2xTcbS2yTQ/exec";
-const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=sharing";
+const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwwlA5tmUzfQ1P4JSgjR_GGGjTQdoQ5VoAtdvmy79o6tDESucuTCLsb26Az4RVvkj5Tiw/exec";
+const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1cjMkr0wsqzq1LfzyATBEnR7abgpQlqBkzA3NAQC76Ls/edit";
 
 const STORAGE_PATIENTS_KEY = 'vap_ward_patients_f3';
 const STORAGE_DELETED_IDS_KEY = 'vap_deleted_ids_f3';
@@ -59,11 +59,20 @@ interface ChecklistItem {
 
 interface WeaningSurveyItem {
   id: string;
-  category: number;
-  categoryTitle: string;
+  requirementType: 'must_pass' | 'should_pass'; // ข้อ 1.1-1.4 ต้องผ่าน, ข้อ 1.5-1.8 ควรผ่าน
   text: string;
   status: 'complied' | 'not_complied' | 'pending';
   note: string;
+}
+
+interface WeaningGeneralInfo {
+  an: string;
+  diagnosis: string;
+  apacheScore: string;
+  lungCondition: 'Acute' | 'Chronic' | '';
+  evm: string;
+  icuAdmitDate: string;
+  etTubeDate: string;
 }
 
 interface Patient {
@@ -80,6 +89,7 @@ interface Patient {
     afternoon: ChecklistItem[];
     night: ChecklistItem[];
   };
+  weaningGeneralInfo?: WeaningGeneralInfo;
   weaningSurveys: {
     morning: WeaningSurveyItem[];
     afternoon: WeaningSurveyItem[];
@@ -130,30 +140,77 @@ const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
   { id: 's-2', groupKey: 'S', groupTitle: 'S - SEDATION VACATION การหยุดยานอนหลับชั่วคราว+เฝ้าระวัง', text: 'ลดปริมาณการใช้ และหยุดยานอนหลับ (ปฏิบัติร่วมกับการรักษากับแพทย์เจ้าของไข้)', status: 'pending' }
 ];
 
-const DEFAULT_WEANING_SURVEY: WeaningSurveyItem[] = [
-  { id: 'w1-1', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.1 มีการประเมินภาวะที่ทำให้เกิดระบบหายใจล้มเหลวดีขึ้น', status: 'pending', note: '' },
-  { id: 'w1-2', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.2 ตรวจไม่มีภาวะขาดออกซิเจนครบ 3 ข้อ (PaO2/FiO2 ratio > 150 หรือ O2 sat > 92% ขณะใช้ FiO2 < 0.4, PEEP < 5 cmH2O, FiO2 < 0.4)', status: 'pending', note: '' },
-  { id: 'w1-3', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.3 ประเมินระบบไหลเวียนเลือดปกติ 2 ข้อ (ไม่มี active Myocardial Ischemia, BP > 90/60 ไม่ต้องใช้ Vasopressor drug หรือให้ Dopamine < 5 mcg/kg/min)', status: 'pending', note: '' },
-  { id: 'w1-4', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.4 ประเมินผู้ป่วยสามารถหายใจเองได้', status: 'pending', note: '' },
-  { id: 'w1-5', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.5 ประเมินภาวะ Electrolyte ปกติ', status: 'pending', note: '' },
-  { id: 'w1-6', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.6 ไม่มีไข้ > 38 °C', status: 'pending', note: '' },
-  { id: 'w1-7', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.7 การ Monitor P peak < 20 cmH2O', status: 'pending', note: '' },
-  { id: 'w1-8', category: 1, categoryTitle: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ', text: '1.8 ผู้ป่วยควรมี Hb > 7 gm%', status: 'pending', note: '' },
-  { id: 'w2-1', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.1 อธิบายผู้ป่วยให้ฝึกหายใจ และดูแลอย่างใกล้ชิด', status: 'pending', note: '' },
-  { id: 'w2-2', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.2 จัดท่านั่ง หรือ ศีรษะสูง 70-90 °', status: 'pending', note: '' },
-  { id: 'w2-3', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.3 บันทึก BP, HR, RR, O2 sat. ก่อนทำ Short period SBT', status: 'pending', note: '' },
-  { id: 'w2-4', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.4 เปลี่ยน Mode Spontaneous โดยใช้ PEEP 5 cmH2O (CPAP 5 cmH2O) ไม่ต้องใช้ PS กรณีเป็น Bird Ventilator ให้ on T-piece 8l/m FiO2 0.4', status: 'pending', note: '' },
-  { id: 'w2-5', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.5 ประเมิน BP, HR, RR, O2 sat ลักษณะการหายใจ 5 นาที หลังเปลี่ยน Mode โดยยืนเฝ้าผู้ป่วยตลอดเวลา', status: 'pending', note: '' },
-  { id: 'w2-6', category: 2, categoryTitle: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5min)', text: '2.6 หยุด wean เมื่อพบว่า RR > 35/min or RR < 10/min, HR > 140/min or HR < 50/min, BP > 180/90 mmHg or BP < 90/60 mmHg, Oxygen saturation < 90% ผู้ป่วยกระสับกระส่าย ผู้ป่วยบอกให้ทราบว่าทนไม่ไหว', status: 'pending', note: '' },
-  { id: 'w3-1', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.1 มีการต่อ T-piece 8L/M FiO2 0.4 (ถ้าเป็น T-piece ให้ทำต่อได้)', status: 'pending', note: '' },
-  { id: 'w3-2', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.2 มีการติดตามอาการทุก 15-30 นาที ตามเกณฑ์เฝ้าระวังข้อ 2', status: 'pending', note: '' },
-  { id: 'w3-3', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.3 หยุดการ wean เมื่อพบผิดปกติตามเกณฑ์ข้อ 2 แล้ว Back up setting เดิม', status: 'pending', note: '' },
-  { id: 'w3-4', category: 3, categoryTitle: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)', text: '3.4 ประเมินผู้ป่วยสามารถหายใจเองได้ครบ 120 นาที แล้วทดสอบว่าสามารถ Extubation ได้', status: 'pending', note: '' },
-  { id: 'w4-1', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.1 GCS < 8 หรือผู้ป่วยไม่รู้สึกตัว และซึมมาก', status: 'pending', note: '' },
-  { id: 'w4-2', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.2 ผู้ป่วยมีเสมหะปริมาณมาก และไม่มีแรงไอขณะ suction', status: 'pending', note: '' },
-  { id: 'w4-3', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.3 เคยมีประวัติ secretion obstruction', status: 'pending', note: '' },
-  { id: 'w4-4', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.4 เคย Re intubation ภายใน 48 ชั่วโมงหลัง Extubation', status: 'pending', note: '' },
-  { id: 'w4-5', category: 4, categoryTitle: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน', text: '4.5 มีการแจ้งแพทย์ก่อน off tube', status: 'pending', note: '' }
+const DEFAULT_WEANING_GENERAL_INFO: WeaningGeneralInfo = {
+  an: '',
+  diagnosis: '',
+  apacheScore: '',
+  lungCondition: '',
+  evm: '',
+  icuAdmitDate: '',
+  etTubeDate: ''
+};
+
+// แบบเก็บข้อมูลการใช้ Weaning Protocol Step 1 (ข้อ 1.1-1.4 ต้องผ่าน, ข้อ 1.5-1.8 ควรผ่าน)
+const DEFAULT_WEANING_STEP1_SURVEY: WeaningSurveyItem[] = [
+  { id: 'ws1-1', requirementType: 'must_pass', text: '1.1 ภาวะหายใจล้มเหลวดีขึ้น', status: 'pending', note: '' },
+  { id: 'ws1-2', requirementType: 'must_pass', text: '1.2 ไม่มีภาวะขาด O2', status: 'pending', note: '' },
+  { id: 'ws1-3', requirementType: 'must_pass', text: '1.3 ระบบไหลเวียนเลือดปกติ', status: 'pending', note: '' },
+  { id: 'ws1-4', requirementType: 'must_pass', text: '1.4 pt.หายใจเองได้', status: 'pending', note: '' },
+  { id: 'ws1-5', requirementType: 'should_pass', text: '1.5 เกลือแร่ปกติ', status: 'pending', note: '' },
+  { id: 'ws1-6', requirementType: 'should_pass', text: '1.6 ไม่มีไข้ > 38 °C', status: 'pending', note: '' },
+  { id: 'ws1-7', requirementType: 'should_pass', text: '1.7 P peak < 20 cmH2O', status: 'pending', note: '' },
+  { id: 'ws1-8', requirementType: 'should_pass', text: '1.8 Hb > 7 gm%', status: 'pending', note: '' }
+];
+
+// คู่มือแนวทาง Weaning Protocol ทั้ง 4 หมวด (ย้ายมาไว้ในหน้าคู่มือหมวด W)
+const WEANING_PROTOCOL_GUIDE_CATEGORIES = [
+  {
+    category: 1,
+    title: 'หมวดที่ 1: มีการประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ (Weaning Protocol Step 1)',
+    items: [
+      '1.1 มีการประเมินภาวะที่ทำให้เกิดระบบหายใจล้มเหลวดีขึ้น (ต้องผ่าน)',
+      '1.2 ตรวจไม่มีภาวะขาดออกซิเจนครบ 3 ข้อ: PaO2/FiO2 ratio > 150 หรือ O2 sat > 92% ขณะใช้ FiO2 < 0.4, PEEP < 5 cmH2O, FiO2 < 0.4 (ต้องผ่าน)',
+      '1.3 ประเมินระบบไหลเวียนเลือดปกติ 2 ข้อ: ไม่มี active Myocardial Ischemia, BP > 90/60 ไม่ต้องใช้ Vasopressor drug หรือให้ Dopamine < 5 mcg/kg/min (ต้องผ่าน)',
+      '1.4 ประเมินผู้ป่วยสามารถหายใจเองได้ (ต้องผ่าน)',
+      '1.5 ประเมินภาวะ Electrolyte ปกติ (ควรผ่าน)',
+      '1.6 ไม่มีไข้ > 38 °C (ควรผ่าน)',
+      '1.7 การ Monitor P peak < 20 cmH2O (ควรผ่าน)',
+      '1.8 ผู้ป่วยควรมี Hb > 7 gm% (ควรผ่าน)'
+    ]
+  },
+  {
+    category: 2,
+    title: 'หมวดที่ 2: มีการประเมินการหายใจแบบ Short period SBT (5 min)',
+    items: [
+      '2.1 อธิบายผู้ป่วยให้ฝึกหายใจ และดูแลอย่างใกล้ชิด',
+      '2.2 จัดท่านั่ง หรือ ศีรษะสูง 70-90 °',
+      '2.3 บันทึก BP, HR, RR, O2 sat. ก่อนทำ Short period SBT',
+      '2.4 เปลี่ยน Mode Spontaneous โดยใช้ PEEP 5 cmH2O (CPAP 5 cmH2O) ไม่ต้องใช้ PS กรณีเป็น Bird Ventilator ให้ on T-piece 8 l/m FiO2 0.4',
+      '2.5 ประเมิน BP, HR, RR, O2 sat ลักษณะการหายใจ 5 นาที หลังเปลี่ยน Mode โดยยืนเฝ้าผู้ป่วยตลอดเวลา',
+      '2.6 หยุด wean เมื่อพบว่า RR > 35/min or RR < 10/min, HR > 140/min or HR < 50/min, BP > 180/90 mmHg or BP < 90/60 mmHg, Oxygen saturation < 90% ผู้ป่วยกระสับกระส่าย ผู้ป่วยบอกให้ทราบว่าทนไม่ไหว'
+    ]
+  },
+  {
+    category: 3,
+    title: 'หมวดที่ 3: มีการประเมินการหายใจแบบ Long period SBT (120 min)',
+    items: [
+      '3.1 มีการต่อ T-piece 8 L/M FiO2 0.4 (ถ้าเป็น T-piece ให้ทำต่อได้)',
+      '3.2 มีการติดตามอาการทุก 15-30 นาที ตามเกณฑ์เฝ้าระวังข้อ 2',
+      '3.3 หยุดการ wean เมื่อพบผิดปกติตามเกณฑ์ข้อ 2 แล้ว Back up setting เดิม',
+      '3.4 ประเมินผู้ป่วยสามารถหายใจเองได้ครบ 120 นาที แล้วทดสอบว่าสามารถ Extubation ได้'
+    ]
+  },
+  {
+    category: 4,
+    title: 'หมวดที่ 4: มีการประเมินผู้ป่วยกรณีไม่สามารถ Extubation ให้ Intubation ไว้ก่อน',
+    items: [
+      '4.1 GCS < 8 หรือผู้ป่วยไม่รู้สึกตัว และซึมมาก',
+      '4.2 ผู้ป่วยมีเสมหะปริมาณมาก และไม่มีแรงไอขณะ suction',
+      '4.3 เคยมีประวัติ secretion obstruction',
+      '4.4 เคย Re-intubation ภายใน 48 ชั่วโมงหลัง Extubation',
+      '4.5 มีการแจ้งแพทย์ก่อน off tube'
+    ]
+  }
 ];
 
 const MAX_SCORE = 16;
@@ -218,16 +275,23 @@ const migratePatient = (p: any): Patient => {
       });
   };
 
-  const migrateSurvey = (list: any[]) => {
-    if (!list) return DEFAULT_WEANING_SURVEY.map(i => ({ ...i }));
-    return list.map(i => ({
-      id: i.id || ('ws-' + Math.random()),
-      category: i.category || 1,
-      categoryTitle: decodeSymbols(i.categoryTitle || 'หมวดที่ 1'),
-      text: decodeSymbols(i.text || ''),
-      status: (i.status as 'complied' | 'not_complied' | 'pending') || 'pending',
-      note: i.note || ''
-    }));
+  const migrateStep1Survey = (list: any[]): WeaningSurveyItem[] => {
+    if (!list || list.length === 0) {
+      return DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i }));
+    }
+    const existingMap = new Map(list.map(item => [item.id, item]));
+    return DEFAULT_WEANING_STEP1_SURVEY.map((defItem, idx) => {
+      const legacyId = `w1-${idx + 1}`;
+      const found = existingMap.get(defItem.id) || existingMap.get(legacyId);
+      if (found) {
+        return {
+          ...defItem,
+          status: (found.status as 'complied' | 'not_complied' | 'pending') || 'pending',
+          note: found.note || ''
+        };
+      }
+      return { ...defItem };
+    });
   };
 
   const checklists = p.checklists ? {
@@ -241,13 +305,13 @@ const migratePatient = (p: any): Patient => {
   };
 
   const weaningSurveys = p.weaningSurveys ? {
-    morning: migrateSurvey(p.weaningSurveys.morning),
-    afternoon: migrateSurvey(p.weaningSurveys.afternoon),
-    night: migrateSurvey(p.weaningSurveys.night)
+    morning: migrateStep1Survey(p.weaningSurveys.morning),
+    afternoon: migrateStep1Survey(p.weaningSurveys.afternoon),
+    night: migrateStep1Survey(p.weaningSurveys.night)
   } : {
-    morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-    afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i })),
-    night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i }))
+    morning: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i })),
+    afternoon: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i })),
+    night: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i }))
   };
 
   const progresses = {
@@ -259,6 +323,10 @@ const migratePatient = (p: any): Patient => {
   return {
     ...p,
     checklists,
+    weaningGeneralInfo: {
+      ...DEFAULT_WEANING_GENERAL_INFO,
+      ...(p.weaningGeneralInfo || {})
+    },
     weaningSurveys,
     progresses,
     lastAssessedBy: p.lastAssessedBy || 'พว.กานดา',
@@ -526,11 +594,30 @@ export default function App() {
     try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
   };
 
+  const updateWeaningGeneralField = (patientId: string, field: keyof WeaningGeneralInfo, value: string) => {
+    const updated = patients.map(p => {
+      if (p.id !== patientId) return p;
+      return {
+        ...p,
+        weaningGeneralInfo: {
+          ...DEFAULT_WEANING_GENERAL_INFO,
+          ...(p.weaningGeneralInfo || {}),
+          [field]: value
+        },
+        updatedAt: Date.now()
+      };
+    });
+
+    setPatients(updated);
+    setHasUnsavedChanges(true);
+    try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
+  };
+
   const updateWeaningItemStatus = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, newStatus: 'complied' | 'not_complied') => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
     const updated = patients.map(p => {
       if (p.id !== patientId) return p;
-      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
+      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_STEP1_SURVEY).map(item => {
         if (item.id === itemId) {
           const toggled: 'complied' | 'not_complied' | 'pending' = item.status === newStatus ? 'pending' : newStatus;
           return { ...item, status: toggled };
@@ -557,7 +644,7 @@ export default function App() {
   const updateWeaningItemNote = (patientId: string, shiftKey: 'morning' | 'afternoon' | 'night', itemId: string, noteText: string) => {
     const updated = patients.map(p => {
       if (p.id !== patientId) return p;
-      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY).map(item => {
+      const surveyItems = (p.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_STEP1_SURVEY).map(item => {
         if (item.id === itemId) {
           return { ...item, note: noteText };
         }
@@ -650,10 +737,11 @@ export default function App() {
         afternoon: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'pending' })),
         night: DEFAULT_WHAPOS_CHECKLIST.map(i => ({ ...i, status: 'pending' }))
       },
+      weaningGeneralInfo: { ...DEFAULT_WEANING_GENERAL_INFO },
       weaningSurveys: {
-        morning: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' })),
-        afternoon: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' })),
-        night: DEFAULT_WEANING_SURVEY.map(i => ({ ...i, status: 'pending' }))
+        morning: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i, status: 'pending' })),
+        afternoon: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i, status: 'pending' })),
+        night: DEFAULT_WEANING_STEP1_SURVEY.map(i => ({ ...i, status: 'pending' }))
       },
       progresses: { morning: 0, afternoon: 0, night: 0 },
       lastAssessedBy: nurseName,
@@ -704,7 +792,8 @@ export default function App() {
     const rawScore = calculateRawScore(shiftItems);
     const totalItems = shiftItems.length || MAX_SCORE;
     const riskInfo = getRiskTier(shiftProg);
-    const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY;
+    const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_STEP1_SURVEY;
+    const gInfo = pt.weaningGeneralInfo || DEFAULT_WEANING_GENERAL_INFO;
 
     const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => {
       const lbl = getButtonLabels(i.id);
@@ -716,8 +805,24 @@ export default function App() {
     });
     const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ: 0 คะแนน] ${decodeSymbols(i.text)}`);
 
-    const surveyPassed = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ [ผ่าน] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
-    const surveyNotPassed = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ผ่าน] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
+    const surveyPassed = surveyItems.filter(i => i.status === 'complied').map(i => {
+      const tag = i.requirementType === 'must_pass' ? 'ต้องผ่าน' : 'ควรผ่าน';
+      return `  ✓ [ผ่าน - ${tag}] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`;
+    });
+    const surveyNotPassed = surveyItems.filter(i => i.status === 'not_complied').map(i => {
+      const tag = i.requirementType === 'must_pass' ? 'ต้องผ่าน' : 'ควรผ่าน';
+      return `  ✗ [ไม่ผ่าน - ${tag}] ${decodeSymbols(i.text)}${i.note ? ` (เหตุผล: ${i.note})` : ''}`;
+    });
+
+    const generalInfoLines = [
+      gInfo.an ? `AN: ${gInfo.an}` : '',
+      gInfo.diagnosis ? `Dx: ${gInfo.diagnosis}` : '',
+      gInfo.apacheScore ? `Apache II: ${gInfo.apacheScore}` : '',
+      gInfo.lungCondition ? `สภาพปอด: ${gInfo.lungCondition}` : '',
+      gInfo.evm ? `EVM: ${gInfo.evm}` : '',
+      gInfo.icuAdmitDate ? `ย้ายเข้า ICU: ${gInfo.icuAdmitDate}` : '',
+      gInfo.etTubeDate ? `ใส่ ET tube: ${gInfo.etTubeDate}` : ''
+    ].filter(Boolean).join(' | ');
 
     return `[สรุปส่งเวร หอผู้ป่วยอายุรกรรมหญิง 3 (อญ.3)]
 ผู้ประเมิน: ${pt.lastAssessedBy || nurseName} (${pt.lastAssessedShift || shiftName}) เวลา ${pt.lastAssessedTime || '09:00 น.'}
@@ -735,11 +840,11 @@ ${notCompliedItems.length > 0 ? notCompliedItems.join('\n') : '  (ไม่ม�
 [รอดำเนินการ (${pendingItems.length} ข้อ)]:
 ${pendingItems.length > 0 ? pendingItems.join('\n') : '  (ไม่มี)'}
 
---- แบบสำรวจ Weaning Protocol สำหรับพยาบาลวิชาชีพ ---
-[ผ่าน (${surveyPassed.length})]:
+--- แบบเก็บข้อมูลการใช้ Weaning Protocol (Step 1) ---
+${generalInfoLines ? `ข้อมูลทั่วไป: ${generalInfoLines}\n` : ''}[ผ่าน (${surveyPassed.length}/8 ข้อ)]:
 ${surveyPassed.length > 0 ? surveyPassed.join('\n') : '  (ไม่มี)'}
 
-[ไม่ผ่าน (${surveyNotPassed.length})]:
+[ไม่ผ่าน (${surveyNotPassed.length} ข้อ)]:
 ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)'}
 
 ผู้บันทึก: ${pt.lastAssessedBy || nurseName}`;
@@ -1003,8 +1108,8 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
-                        <div className="text-sm font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPOS Reference</div>
-                        <div className="text-xs text-slate-500">เกณฑ์การให้คะแนน (เต็ม 16) และความเสี่ยงอัตโนมัติ</div>
+                        <div className="text-sm font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPOS & Weaning Protocol</div>
+                        <div className="text-xs text-slate-500">เกณฑ์การให้คะแนน (เต็ม 16) และแนวทางหย่าเครื่องช่วยหายใจ 4 หมวด</div>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform" />
@@ -1191,6 +1296,11 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
             const morningScore = calculateRawScore(selectedPatient.checklists?.morning || []);
             const afternoonScore = calculateRawScore(selectedPatient.checklists?.afternoon || []);
             const nightScore = calculateRawScore(selectedPatient.checklists?.night || []);
+
+            const generalInfo = selectedPatient.weaningGeneralInfo || DEFAULT_WEANING_GENERAL_INFO;
+            const step1SurveyList = selectedPatient.weaningSurveys?.[activeChecklistShift] || DEFAULT_WEANING_STEP1_SURVEY;
+            const mustPassItems = step1SurveyList.filter(s => s.requirementType === 'must_pass');
+            const shouldPassItems = step1SurveyList.filter(s => s.requirementType === 'should_pass');
 
             return (
               <div className="space-y-4 font-sarabun pb-6">
@@ -1444,81 +1554,248 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                                         onClick={() => setShowWeaningProtocolSurvey(prev => !prev)}
                                         className="w-full bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-prompt font-semibold py-2.5 px-3 rounded-xl flex items-center justify-between transition-colors shadow-xs"
                                       >
-                                        <span className="flex items-center gap-2">
-                                          <FileText className="w-4 h-4 text-teal-600" />
-                                          📋 แบบสำรวจการใช้ Weaning Protocol สำหรับพยาบาลวิชาชีพ
+                                        <span className="flex items-center gap-2 text-left">
+                                          <FileText className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                                          📋 แบบเก็บข้อมูลการใช้ Weaning Protocol (Step 1)
                                         </span>
-                                        {showWeaningProtocolSurvey ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                        {showWeaningProtocolSurvey ? <ChevronDown className="w-4 h-4 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 flex-shrink-0" />}
                                       </button>
 
                                       {showWeaningProtocolSurvey && (
                                         <div className="bg-slate-50 border border-teal-200 rounded-2xl p-3.5 space-y-4 animate-in fade-in duration-200">
-                                          <div className="text-xs font-bold text-teal-900 font-prompt border-b border-teal-100 pb-1.5">
-                                            แบบสำรวจการใช้ Weaning Protocol (4 หมวด)
+                                          <div className="border-b border-teal-100 pb-2">
+                                            <div className="text-xs font-bold text-teal-900 font-prompt">
+                                              แบบเก็บข้อมูลการใช้ Weaning Protocol ในผู้ป่วย ICU อายุรกรรม
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">
+                                              กด "ผ่าน" เมื่อเห็นว่าผ่าน หรือ "ไม่ผ่าน" และระบุเหตุผลให้ชัดเจน
+                                            </p>
                                           </div>
 
-                                          {[1, 2, 3, 4].map(catNum => {
-                                            const surveyList = selectedPatient.weaningSurveys?.[activeChecklistShift] || DEFAULT_WEANING_SURVEY;
-                                            const catItems = surveyList.filter(s => s.category === catNum);
-                                            if (catItems.length === 0) return null;
-                                            const catTitle = decodeSymbols(catItems[0].categoryTitle);
-
-                                            return (
-                                              <div key={catNum} className="space-y-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                                                <h5 className="text-[11px] font-bold font-prompt text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg">
-                                                  {catTitle}
-                                                </h5>
-
-                                                <div className="space-y-3 pt-1">
-                                                  {catItems.map(surveyItem => {
-                                                    const sPassed = surveyItem.status === 'complied';
-                                                    const sNotPassed = surveyItem.status === 'not_complied';
-                                                    const cleanSurveyText = decodeSymbols(surveyItem.text);
-
-                                                    return (
-                                                      <div key={surveyItem.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                                          <p className="text-[11px] font-sarabun font-medium text-slate-800 flex-1 leading-relaxed">
-                                                            {cleanSurveyText}
-                                                          </p>
-                                                          <div className="flex items-center gap-1 flex-shrink-0">
-                                                            <button
-                                                              type="button"
-                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
-                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sPassed ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
-                                                              }`}
-                                                            >
-                                                              <Check className="w-3 h-3" /> ผ่าน
-                                                            </button>
-                                                            <button
-                                                              type="button"
-                                                              onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
-                                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sNotPassed ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
-                                                              }`}
-                                                            >
-                                                              <X className="w-3 h-3" /> ไม่ผ่าน
-                                                            </button>
-                                                          </div>
-                                                        </div>
-
-                                                        <div>
-                                                          <input 
-                                                            type="text"
-                                                            value={surveyItem.note}
-                                                            onChange={e => updateWeaningItemNote(selectedPatient.id, activeChecklistShift, surveyItem.id, e.target.value)}
-                                                            placeholder="หมายเหตุ (ถ้ามี)..."
-                                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-teal-500 font-sarabun"
-                                                          />
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })}
+                                          {/* ส่วนที่ 1: ข้อมูลทั่วไปของผู้ป่วย */}
+                                          <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5 shadow-xs">
+                                            <h5 className="text-[11px] font-bold font-prompt text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg">
+                                              1. ข้อมูลทั่วไปของผู้ป่วย (ประกอบแบบเก็บข้อมูล)
+                                            </h5>
+                                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">AN</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.an}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'an', e.target.value)}
+                                                  placeholder="ระบุ AN"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">Apache II score</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.apacheScore}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'apacheScore', e.target.value)}
+                                                  placeholder="คะแนน"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                              <div className="col-span-2">
+                                                <label className="block text-slate-500 font-semibold mb-0.5">Diagnosis</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.diagnosis}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'diagnosis', e.target.value)}
+                                                  placeholder="การวินิจฉัยโรค"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">สภาพปอด</label>
+                                                <div className="flex gap-1">
+                                                  {(['Acute', 'Chronic'] as const).map(cond => (
+                                                    <button
+                                                      key={cond}
+                                                      type="button"
+                                                      onClick={() => updateWeaningGeneralField(selectedPatient.id, 'lungCondition', generalInfo.lungCondition === cond ? '' : cond)}
+                                                      className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-prompt font-semibold border transition-all ${
+                                                        generalInfo.lungCondition === cond
+                                                          ? 'bg-teal-600 text-white border-teal-600'
+                                                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-teal-50'
+                                                      }`}
+                                                    >
+                                                      {cond}
+                                                    </button>
+                                                  ))}
                                                 </div>
                                               </div>
-                                            );
-                                          })}
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">EVM</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.evm}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'evm', e.target.value)}
+                                                  placeholder="เช่น E4VTM6"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">วันที่ย้ายเข้า ICU</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.icuAdmitDate}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'icuAdmitDate', e.target.value)}
+                                                  placeholder="วว/ดด/ปป"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-slate-500 font-semibold mb-0.5">วันที่ใส่ ET tube</label>
+                                                <input
+                                                  type="text"
+                                                  value={generalInfo.etTubeDate}
+                                                  onChange={e => updateWeaningGeneralField(selectedPatient.id, 'etTubeDate', e.target.value)}
+                                                  placeholder="วว/ดด/ปป"
+                                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 focus:outline-none focus:border-teal-500"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* ส่วนที่ 2: Weaning Protocol Step 1 */}
+                                          <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-3 shadow-xs">
+                                            <div>
+                                              <h5 className="text-[11px] font-bold font-prompt text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg">
+                                                2. Weaning Protocol Step 1: การประเมินผู้ป่วยก่อนเริ่มหย่าเครื่องช่วยหายใจ
+                                              </h5>
+                                              <div className="flex flex-wrap gap-1.5 mt-1.5 px-1">
+                                                <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
+                                                  ข้อ 1.1 - 1.4 ต้องผ่าน
+                                                </span>
+                                                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                                                  ข้อ 1.5 - 1.8 ควรผ่าน
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            {/* กลุ่มข้อ 1.1 - 1.4 ต้องผ่าน */}
+                                            <div className="space-y-2">
+                                              <div className="text-[10px] font-bold font-prompt text-rose-700 px-1">
+                                                เกณฑ์บังคับ (ข้อ 1.1 - 1.4 ต้องผ่าน)
+                                              </div>
+                                              {mustPassItems.map(surveyItem => {
+                                                const sPassed = surveyItem.status === 'complied';
+                                                const sNotPassed = surveyItem.status === 'not_complied';
+                                                const cleanSurveyText = decodeSymbols(surveyItem.text);
+
+                                                return (
+                                                  <div key={surveyItem.id} className={`p-2.5 rounded-xl border space-y-2 ${
+                                                    sPassed ? 'bg-emerald-50/50 border-emerald-200' :
+                                                    sNotPassed ? 'bg-rose-50/50 border-rose-200' :
+                                                    'bg-slate-50 border-slate-200'
+                                                  }`}>
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                      <div className="flex-1">
+                                                        <p className="text-[11px] font-sarabun font-semibold text-slate-800 leading-relaxed">
+                                                          {cleanSurveyText}
+                                                        </p>
+                                                      </div>
+                                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
+                                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                            sPassed ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
+                                                          }`}
+                                                        >
+                                                          <Check className="w-3 h-3" /> ผ่าน
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
+                                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                            sNotPassed ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
+                                                          }`}
+                                                        >
+                                                          <X className="w-3 h-3" /> ไม่ผ่าน
+                                                        </button>
+                                                      </div>
+                                                    </div>
+
+                                                    <div>
+                                                      <input 
+                                                        type="text"
+                                                        value={surveyItem.note}
+                                                        onChange={e => updateWeaningItemNote(selectedPatient.id, activeChecklistShift, surveyItem.id, e.target.value)}
+                                                        placeholder={sNotPassed ? "ระบุเหตุผลที่ไม่ผ่านให้ชัดเจน..." : "หมายเหตุ / เหตุผล (ถ้ามี)..."}
+                                                        className={`w-full bg-white border rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-teal-500 font-sarabun ${
+                                                          sNotPassed ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+                                                        }`}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+
+                                            {/* กลุ่มข้อ 1.5 - 1.8 ควรผ่าน */}
+                                            <div className="space-y-2 pt-1">
+                                              <div className="text-[10px] font-bold font-prompt text-amber-700 px-1">
+                                                เกณฑ์เพิ่มเติม (ข้อ 1.5 - 1.8 ควรผ่าน)
+                                              </div>
+                                              {shouldPassItems.map(surveyItem => {
+                                                const sPassed = surveyItem.status === 'complied';
+                                                const sNotPassed = surveyItem.status === 'not_complied';
+                                                const cleanSurveyText = decodeSymbols(surveyItem.text);
+
+                                                return (
+                                                  <div key={surveyItem.id} className={`p-2.5 rounded-xl border space-y-2 ${
+                                                    sPassed ? 'bg-emerald-50/50 border-emerald-200' :
+                                                    sNotPassed ? 'bg-rose-50/50 border-rose-200' :
+                                                    'bg-slate-50 border-slate-200'
+                                                  }`}>
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                      <div className="flex-1">
+                                                        <p className="text-[11px] font-sarabun font-semibold text-slate-800 leading-relaxed">
+                                                          {cleanSurveyText}
+                                                        </p>
+                                                      </div>
+                                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
+                                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                            sPassed ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
+                                                          }`}
+                                                        >
+                                                          <Check className="w-3 h-3" /> ผ่าน
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
+                                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
+                                                            sNotPassed ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
+                                                          }`}
+                                                        >
+                                                          <X className="w-3 h-3" /> ไม่ผ่าน
+                                                        </button>
+                                                      </div>
+                                                    </div>
+
+                                                    <div>
+                                                      <input 
+                                                        type="text"
+                                                        value={surveyItem.note}
+                                                        onChange={e => updateWeaningItemNote(selectedPatient.id, activeChecklistShift, surveyItem.id, e.target.value)}
+                                                        placeholder={sNotPassed ? "ระบุเหตุผลที่ไม่ผ่านให้ชัดเจน..." : "หมายเหตุ / เหตุผล (ถ้ามี)..."}
+                                                        className={`w-full bg-white border rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-teal-500 font-sarabun ${
+                                                          sNotPassed ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+                                                        }`}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
                                         </div>
                                       )}
                                     </div>
@@ -1595,8 +1872,8 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
           {currentTab === 'guide' && (
             <div className="space-y-4 font-sarabun">
               <div>
-                <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Risk Tiers</h2>
-                <p className="text-xs text-slate-500">เกณฑ์การให้คะแนนข้อละ 1 คะแนน (คะแนนเต็ม 16 คะแนน) และระดับความเสี่ยงอัตโนมัติ</p>
+                <h2 className="text-base font-bold font-prompt text-slate-800">คู่มือ/แนวทาง WHAPO + S & Weaning Protocol</h2>
+                <p className="text-xs text-slate-500">เกณฑ์การให้คะแนนข้อละ 1 คะแนน (คะแนนเต็ม 16 คะแนน) และคู่มือการหย่าเครื่องช่วยหายใจ</p>
               </div>
 
               <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
@@ -1629,18 +1906,39 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
               </div>
 
               <div className="space-y-3">
-                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-2">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center font-prompt text-base">W</div>
+                {/* หมวด W พร้อมคู่มือ Weaning Protocol 4 หมวด */}
+                <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-800 font-bold flex items-center justify-center font-prompt text-base flex-shrink-0">W</div>
                     <div>
                       <h4 className="text-xs font-bold font-prompt text-slate-800">W - WEAN การหย่าเครื่องช่วยหายใจ (2 คะแนน)</h4>
-                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน รวมแบบสำรวจ 4 หมวดสำหรับพยาบาลวิชาชีพ</p>
+                      <p className="text-[11px] text-slate-500">ข้อละ 1 คะแนน พร้อมแนวทาง Weaning Protocol 4 หมวด</p>
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-cyan-600 font-sarabun">
                     <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน (พร้อม / ไม่พร้อม = 1 คะแนน)</li>
-                    <li>ใช้ weaning protocol (ใช้ / ไม่ใช้ = 1 คะแนน, มีแบบสำรวจละเอียด 4 หมวด)</li>
+                    <li>ใช้ weaning protocol (ใช้ / ไม่ใช้ = 1 คะแนน)</li>
                   </ul>
+
+                  {/* คู่มือแนวทาง Weaning Protocol 4 หมวด */}
+                  <div className="bg-cyan-50/70 border border-cyan-200 rounded-xl p-3 space-y-3 mt-2">
+                    <div className="text-xs font-bold font-prompt text-cyan-900 border-b border-cyan-200 pb-1.5 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-cyan-700" />
+                      คู่มือแนวทางการใช้ Weaning Protocol (4 หมวด)
+                    </div>
+                    {WEANING_PROTOCOL_GUIDE_CATEGORIES.map(cat => (
+                      <div key={cat.category} className="bg-white rounded-xl p-2.5 border border-cyan-100 space-y-1.5">
+                        <div className="text-[11px] font-bold font-prompt text-teal-800">
+                          {cat.title}
+                        </div>
+                        <ul className="text-[11px] text-slate-700 space-y-1 pl-3.5 list-disc marker:text-teal-500 leading-relaxed">
+                          {cat.items.map((line, i) => (
+                            <li key={i}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-2xl p-4 border border-teal-100 shadow-sm">

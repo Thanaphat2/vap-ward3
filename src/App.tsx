@@ -97,6 +97,20 @@ interface Patient {
   isDischarged?: boolean;
 }
 
+// กำหนดคำบนปุ่มให้ตรงตามบริบทเฉพาะข้อ
+const getButtonLabels = (itemId: string): { positive: string; negative: string } => {
+  switch (itemId) {
+    case 'w-1':
+      return { positive: 'พร้อม', negative: 'ไม่พร้อม' };
+    case 'w-2':
+      return { positive: 'ใช้', negative: 'ไม่ใช้' };
+    case 'a-2':
+      return { positive: 'ผ่านเกณฑ์', negative: 'ไม่ผ่านเกณฑ์' };
+    default:
+      return { positive: 'ปฏิบัติ', negative: 'ไม่ปฏิบัติ' };
+  }
+};
+
 const DEFAULT_WHAPOS_CHECKLIST: ChecklistItem[] = [
   { id: 'w-1', groupKey: 'W', groupTitle: 'W - WEAN การหย่าเครื่องช่วยหายใจ', text: 'ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน', status: 'pending' },
   { id: 'w-2', groupKey: 'W', groupTitle: 'W - WEAN การหย่าเครื่องช่วยหายใจ', text: 'ใช้ weaning protocol', status: 'pending' },
@@ -692,8 +706,14 @@ export default function App() {
     const riskInfo = getRiskTier(shiftProg);
     const surveyItems = pt.weaningSurveys?.[shiftKey] || DEFAULT_WEANING_SURVEY;
 
-    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => `  ✓ [ปฏิบัติ: 1 คะแนน] ${decodeSymbols(i.text)}`);
-    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ: 0 คะแนน] ${decodeSymbols(i.text)}`);
+    const compliedItems = shiftItems.filter(i => i.status === 'complied').map(i => {
+      const lbl = getButtonLabels(i.id);
+      return `  ✓ [${lbl.positive}: 1 คะแนน] ${decodeSymbols(i.text)}`;
+    });
+    const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => {
+      const lbl = getButtonLabels(i.id);
+      return `  ✗ [${lbl.negative}: 0 คะแนน] ${decodeSymbols(i.text)}`;
+    });
     const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ: 0 คะแนน] ${decodeSymbols(i.text)}`);
 
     const surveyPassed = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ [ผ่าน] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
@@ -706,10 +726,10 @@ Ventilator Day: ${pt.ventDay} | คะแนนรวม (${shiftName}): ${rawSc
 ประเมินความเสี่ยง VAP: [${riskInfo.label}] - ${riskInfo.evalLevel}
 
 รายการประเมิน WHAPO + S (${shiftName}) [ข้อละ 1 คะแนน เต็ม ${totalItems} คะแนน]:
-[ปฏิบัติ (${compliedItems.length}/${totalItems} คะแนน)]:
+[ผ่าน/ปฏิบัติ (${compliedItems.length}/${totalItems} คะแนน)]:
 ${compliedItems.length > 0 ? compliedItems.join('\n') : '  (ไม่มี)'}
 
-[ไม่ปฏิบัติ (${notCompliedItems.length} ข้อ)]:
+[ไม่ผ่าน/ไม่ปฏิบัติ (${notCompliedItems.length} ข้อ)]:
 ${notCompliedItems.length > 0 ? notCompliedItems.join('\n') : '  (ไม่มี)'}
 
 [รอดำเนินการ (${pendingItems.length} ข้อ)]:
@@ -864,7 +884,7 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                         </h3>
                         <p className="text-[10px] text-slate-600">
                           {bedAlerts.length > 0 
-                            ? `พบ ${bedAlerts.length} เตียงที่ยังมีรายการค้างทำ/ไม่ปฏิบัติ (แตะที่เตียงเพื่อเข้าไปประเมิน)` 
+                            ? `พบ ${bedAlerts.length} เตียงที่ยังมีรายการค้างทำ/ไม่ผ่านเกณฑ์ (แตะที่เตียงเพื่อเข้าไปประเมิน)` 
                             : 'เยี่ยมมาก! ผู้ป่วยทุกรายได้รับการประเมิน WHAPO + S ครบ 16/16 คะแนน (100%)'}
                         </p>
                       </div>
@@ -912,22 +932,25 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                             </div>
 
                             <ul className="space-y-1 pl-1">
-                              {displayItems.map(item => (
-                                <li key={item.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
-                                  {item.alertType === 'not_complied' ? (
-                                    <span className="text-[9px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5">
-                                      ไม่ปฏิบัติ
+                              {displayItems.map(item => {
+                                const negLabel = getButtonLabels(item.id).negative;
+                                return (
+                                  <li key={item.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
+                                    {item.alertType === 'not_complied' ? (
+                                      <span className="text-[9px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5">
+                                        {negLabel}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5 flex items-center gap-0.5">
+                                        <Clock className="w-2.5 h-2.5" /> ลืมทำ
+                                      </span>
+                                    )}
+                                    <span className="text-slate-700">
+                                      <strong className="text-teal-800">[{item.groupKey}]</strong> {decodeSymbols(item.text)}
                                     </span>
-                                  ) : (
-                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded flex-shrink-0 mt-0.5 flex items-center gap-0.5">
-                                      <Clock className="w-2.5 h-2.5" /> ลืมทำ
-                                    </span>
-                                  )}
-                                  <span className="text-slate-700">
-                                    <strong className="text-teal-800">[{item.groupKey}]</strong> {decodeSymbols(item.text)}
-                                  </span>
-                                </li>
-                              ))}
+                                  </li>
+                                );
+                              })}
                             </ul>
 
                             {allMissed.length > 3 && (
@@ -1359,6 +1382,7 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                               const isComplied = item.status === 'complied';
                               const isNotComplied = item.status === 'not_complied';
                               const cleanText = decodeSymbols(item.text);
+                              const btnLabels = getButtonLabels(item.id);
 
                               return (
                                 <React.Fragment key={item.id}>
@@ -1390,25 +1414,25 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                                       <button
                                         type="button"
                                         onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'complied')}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs whitespace-nowrap ${
                                           isComplied 
                                             ? 'bg-[#10B981] text-white shadow-sm ring-2 ring-emerald-200' 
                                             : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
                                         }`}
                                       >
-                                        <Check className="w-3.5 h-3.5" /> ปฏิบัติ
+                                        <Check className="w-3.5 h-3.5" /> {btnLabels.positive}
                                       </button>
 
                                       <button
                                         type="button"
                                         onClick={() => updateItemStatus(selectedPatient.id, activeChecklistShift, item.id, 'not_complied')}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs ${
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-prompt font-semibold transition-all flex items-center gap-1 shadow-xs whitespace-nowrap ${
                                           isNotComplied 
                                             ? 'bg-[#EF4444] text-white shadow-sm ring-2 ring-rose-200' 
                                             : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
                                         }`}
                                       >
-                                        <X className="w-3.5 h-3.5" /> ไม่ปฏิบัติ
+                                        <X className="w-3.5 h-3.5" /> {btnLabels.negative}
                                       </button>
                                     </div>
                                   </div>
@@ -1614,8 +1638,8 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                     </div>
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-cyan-600 font-sarabun">
-                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน (1 คะแนน)</li>
-                    <li>ใช้ weaning protocol (มีแบบสำรวจละเอียด 4 หมวด) (1 คะแนน)</li>
+                    <li>ประเมินความพร้อมในการถอดท่อช่วยหายใจทุกวัน (พร้อม / ไม่พร้อม = 1 คะแนน)</li>
+                    <li>ใช้ weaning protocol (ใช้ / ไม่ใช้ = 1 คะแนน, มีแบบสำรวจละเอียด 4 หมวด)</li>
                   </ul>
                 </div>
 
@@ -1643,7 +1667,7 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                   </div>
                   <ul className="text-xs text-slate-700 space-y-1.5 pl-4 list-disc marker:text-amber-600 font-sarabun">
                     <li>ยกหัวเตียงสูง 30-45 องศา (1 คะแนน)</li>
-                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร (1 คะแนน)</li>
+                    <li>วัด cuff pressure 30-35 cmH2O ทุกเวร (ผ่านเกณฑ์ / ไม่ผ่านเกณฑ์ = 1 คะแนน)</li>
                     <li>ประเมิน NG ก่อน feeds (1 คะแนน)</li>
                     <li>ใช้ชุดหยดอาหารทางสายยาง ใช้เวลา 2-4 ชม. (1 คะแนน)</li>
                   </ul>

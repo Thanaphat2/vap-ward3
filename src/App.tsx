@@ -38,8 +38,8 @@ import {
 import confetti from 'canvas-confetti';
 
 // URL ของ Web App จาก Google Apps Script และลิงก์ไฟล์ Google Sheets
-const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw-z2tM9gXQ28vN6nIst_nL7k5isZIyhGJm7AG_b2yHSPN3iAwLd1jfO3rJRw2j8Sby3A/exec";
-const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1z0_IuHZn-_joeSk_RlCQ_2l9gbuw8QF3QI8vcj2GWag/edit?usp=drivesdk";
+const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwwlA5tmUzfQ1P4JSgjR_GGGjTQdoQ5VoAtdvmy79o6tDESucuTCLsb26Az4RVvkj5Tiw/exec";
+const DEFAULT_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1cjMkr0wsqzq1LfzyATBEnR7abgpQlqBkzA3NAQC76Ls/edit";
 
 const STORAGE_PATIENTS_KEY = 'vap_ward_patients_f3';
 const STORAGE_DELETED_IDS_KEY = 'vap_deleted_ids_f3';
@@ -351,7 +351,6 @@ export default function App() {
     return [];
   });
 
-  // โหลดข้อมูลจาก Google Sheets เฉพาะตอนเปิดแอปครั้งแรก หรือตอนกดปุ่มรีเฟรชเอง
   const fetchFromGoogleSheets = async (targetUrl = sheetUrlInput, forceOverwrite = false) => {
     if (!targetUrl.trim()) {
       setIsSheetConnected(false);
@@ -430,7 +429,6 @@ export default function App() {
     fetchFromGoogleSheets(sheetUrlInput, false);
   }, []);
 
-  // ฟังก์ชันกดปุ่ม "บันทึกและส่งออก" -> เก็บประวัติลงชีต และยังคงข้อมูลผู้ป่วยไว้บนหน้าเว็บเหมือนเดิม
   const handleSaveAndExportPatient = async (patient: Patient) => {
     const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
     const updatedPatient: Patient = {
@@ -442,7 +440,6 @@ export default function App() {
       isDischarged: false
     };
 
-    // คงข้อมูลผู้ป่วยไว้ในรายการบนหน้าเว็บและบันทึกลง localStorage
     const updatedList = patients.map(p => (p.id === updatedPatient.id ? updatedPatient : p));
     setPatients(updatedList);
     try {
@@ -565,16 +562,13 @@ export default function App() {
     try { localStorage.setItem(STORAGE_PATIENTS_KEY, JSON.stringify(updated)); } catch {}
   };
 
-  // ลบเตียงออกจากหน้าเว็บเท่านั้น (ไม่ลบข้อมูลใน Google Sheets)
   const executeDeletePatientFromWeb = async () => {
     if (!deleteTargetPatient) return;
     const target = deleteTargetPatient;
     setIsDeletingBed(true);
 
-    // 1. บันทึก ID ลงรายการที่นำออกจากหน้าเว็บแล้ว
     addDeletedId(target.id);
 
-    // 2. ลบออกจากหน้าจอเว็บและ localStorage
     const updated = patients.filter(p => p.id !== target.id);
     setPatients(updated);
     try {
@@ -586,7 +580,6 @@ export default function App() {
       setHasUnsavedChanges(false);
     }
 
-    // 3. แจ้ง Google Sheets ว่าจำหน่ายเตียงนี้ออกจากหน้าเว็บแล้ว (โดยไม่ลบข้อมูลเก่าในชีต)
     if (sheetUrlInput.trim()) {
       setIsSyncing(true);
       setCloudStatusMsg(`นำเตียง ${target.bed} ออกจากหน้าเว็บแล้ว`);
@@ -703,8 +696,8 @@ export default function App() {
     const notCompliedItems = shiftItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ปฏิบัติ: 0 คะแนน] ${decodeSymbols(i.text)}`);
     const pendingItems = shiftItems.filter(i => i.status === 'pending').map(i => `  - [รอดำเนินการ: 0 คะแนน] ${decodeSymbols(i.text)}`);
 
-    const surveyComplied = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
-    const surveyNotComplied = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
+    const surveyPassed = surveyItems.filter(i => i.status === 'complied').map(i => `  ✓ [ผ่าน] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
+    const surveyNotPassed = surveyItems.filter(i => i.status === 'not_complied').map(i => `  ✗ [ไม่ผ่าน] ${decodeSymbols(i.text)}${i.note ? ` (หมายเหตุ: ${i.note})` : ''}`);
 
     return `[สรุปส่งเวร หอผู้ป่วยอายุรกรรมหญิง 3 (อญ.3)]
 ผู้ประเมิน: ${pt.lastAssessedBy || nurseName} (${pt.lastAssessedShift || shiftName}) เวลา ${pt.lastAssessedTime || '09:00 น.'}
@@ -723,11 +716,11 @@ ${notCompliedItems.length > 0 ? notCompliedItems.join('\n') : '  (ไม่ม�
 ${pendingItems.length > 0 ? pendingItems.join('\n') : '  (ไม่มี)'}
 
 --- แบบสำรวจ Weaning Protocol สำหรับพยาบาลวิชาชีพ ---
-[ปฏิบัติ (${surveyComplied.length})]:
-${surveyComplied.length > 0 ? surveyComplied.join('\n') : '  (ไม่มี)'}
+[ผ่าน (${surveyPassed.length})]:
+${surveyPassed.length > 0 ? surveyPassed.join('\n') : '  (ไม่มี)'}
 
-[ไม่ปฏิบัติ/ยังไม่ประเมิน (${surveyNotComplied.length})]:
-${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่มี)'}
+[ไม่ผ่าน (${surveyNotPassed.length})]:
+${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)'}
 
 ผู้บันทึก: ${pt.lastAssessedBy || nurseName}`;
   };
@@ -1454,8 +1447,8 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
 
                                                 <div className="space-y-3 pt-1">
                                                   {catItems.map(surveyItem => {
-                                                    const sComplied = surveyItem.status === 'complied';
-                                                    const sNotComplied = surveyItem.status === 'not_complied';
+                                                    const sPassed = surveyItem.status === 'complied';
+                                                    const sNotPassed = surveyItem.status === 'not_complied';
                                                     const cleanSurveyText = decodeSymbols(surveyItem.text);
 
                                                     return (
@@ -1469,19 +1462,19 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                                                               type="button"
                                                               onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'complied')}
                                                               className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sComplied ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
+                                                                sPassed ? 'bg-[#10B981] text-white shadow-xs' : 'bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50'
                                                               }`}
                                                             >
-                                                              <Check className="w-3 h-3" /> ปฏิบัติ
+                                                              <Check className="w-3 h-3" /> ผ่าน
                                                             </button>
                                                             <button
                                                               type="button"
                                                               onClick={() => updateWeaningItemStatus(selectedPatient.id, activeChecklistShift, surveyItem.id, 'not_complied')}
                                                               className={`px-2.5 py-1 rounded-lg text-[10px] font-prompt font-semibold transition-all flex items-center gap-0.5 ${
-                                                                sNotComplied ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
+                                                                sNotPassed ? 'bg-[#EF4444] text-white shadow-xs' : 'bg-white text-rose-700 border border-rose-300 hover:bg-rose-50'
                                                               }`}
                                                             >
-                                                              <X className="w-3 h-3" /> ไม่ปฏิบัติ
+                                                              <X className="w-3 h-3" /> ไม่ผ่าน
                                                             </button>
                                                           </div>
                                                         </div>
@@ -1514,7 +1507,6 @@ ${surveyNotComplied.length > 0 ? surveyNotComplied.join('\n') : '  (ไม่ม
                       );
                     })}
 
-                    {/* ปุ่มกดบันทึกและส่งออกหลังประเมินเสร็จ (ข้อมูลในเว็บยังอยู่ครบ และเพิ่มประวัติใหม่ในชีต) */}
                     <div className="bg-white rounded-2xl p-4 border-2 border-teal-500 shadow-md space-y-2.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-bold font-prompt text-slate-800">สรุปผลการประเมินเตียง {selectedPatient.bed}</span>

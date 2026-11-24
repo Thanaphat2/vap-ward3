@@ -511,13 +511,15 @@ export default function App() {
     fetchFromGoogleSheets(sheetUrlInput, false);
   }, []);
 
-  const handleSaveAndExportPatient = async (patient: Patient) => {
-    const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+  const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const defaultDateTime = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())} น.`;
+
     const updatedPatient: Patient = {
       ...patient,
       lastAssessedBy: nurseName,
       lastAssessedShift: activeShift,
-      lastAssessedTime: timeNow,
+      lastAssessedTime: patient.lastAssessedTime || defaultDateTime,
       updatedAt: Date.now(),
       isDischarged: false
     };

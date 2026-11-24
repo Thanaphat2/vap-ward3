@@ -1820,24 +1820,37 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                         <span className="font-bold font-prompt text-teal-700">{currentRawScore}/{currentTotalItems} คะแนน ({currentProg}%)</span>
                       </div>
 
-                      {/* แสดงและแก้ไขเวลาที่บันทึกได้ */}
-                      <div className="flex items-center justify-between bg-teal-50/70 px-3 py-2 rounded-xl border border-teal-100 text-xs">
+                      {/* เลือกวันที่และเวลาที่บันทึก */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-teal-50/70 px-3 py-2 rounded-xl border border-teal-100 text-xs">
                         <span className="text-slate-600 font-semibold flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-teal-600" /> เวลาที่บันทึก:
+                          <Clock className="w-3.5 h-3.5 text-teal-600" /> วัน-เวลาที่บันทึก:
                         </span>
                         <input
-                          type="text"
-                          value={selectedPatient.lastAssessedTime || ''}
+                          type="datetime-local"
+                          value={(() => {
+                            const raw = selectedPatient.lastAssessedTime || '';
+                            // แปลงรูปแบบ dd/MM/yyyy HH:mm น. กลับเป็น YYYY-MM-DDTHH:mm เพื่อให้แสดงใน input ได้
+                            const match = raw.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+                            if (match) {
+                              return `${match[3]}-${match[2]}-${match[1]}T${match[4]}:${match[5]}`;
+                            }
+                            const now = new Date();
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                          })()}
                           onChange={e => {
-                            const val = e.target.value;
+                            const val = e.target.value; // ได้ค่า YYYY-MM-DDTHH:mm
+                            if (!val) return;
+                            const [datePart, timePart] = val.split('T');
+                            const [yyyy, mm, dd] = datePart.split('-');
+                            const formatted = `${dd}/${mm}/${yyyy} ${timePart} น.`;
                             const updated = patients.map(p =>
-                              p.id === selectedPatient.id ? { ...p, lastAssessedTime: val } : p
+                              p.id === selectedPatient.id ? { ...p, lastAssessedTime: formatted } : p
                             );
                             setPatients(updated);
                             setHasUnsavedChanges(true);
                           }}
-                          placeholder="เช่น 09:30 น."
-                          className="w-24 text-right bg-white border border-teal-200 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 focus:outline-none focus:border-teal-500"
+                          className="bg-white border border-teal-200 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 focus:outline-none focus:border-teal-500"
                         />
                       </div>
 

@@ -892,7 +892,7 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h1 className="text-sm font-bold font-prompt tracking-wide">VAP BUNDLE CASE</h1>
+                  <h1 className="text-sm font-bold font-prompt tracking-wide">VAP BUNDLE CARE</h1>
                   <span className="text-[10px] bg-teal-800 text-teal-200 px-1.5 py-0.5 rounded font-semibold">อญ.3</span>
                 </div>
               </div>

@@ -1461,9 +1461,15 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                       <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider font-prompt">
                         WHAPO + S (ข้อละ 1 คะแนน เต็ม {currentTotalItems})
                       </h3>
-                      <span className="text-xs font-semibold text-teal-700">
-                        ผู้ประเมิน: {selectedPatient.lastAssessedBy || nurseName}
-                      </span>
+                      <div className="text-right">
+                        <span className="text-xs font-semibold text-teal-700 block">
+                          ผู้ประเมิน: {selectedPatient.lastAssessedBy || nurseName}
+                        </span>
+                        <span className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
+                          <Clock className="w-3 h-3 text-teal-600" />
+                          เวลาบันทึก: {selectedPatient.lastAssessedTime || '-'}
+                        </span>
+                      </div>
                     </div>
 
                     {(['W', 'H', 'A', 'P', 'O', 'S'] as const).map(groupKey => {
@@ -1813,6 +1819,28 @@ ${surveyNotPassed.length > 0 ? surveyNotPassed.join('\n') : '  (ไม่มี)
                         <span className="font-bold font-prompt text-slate-800">สรุปผลการประเมินเตียง {selectedPatient.bed}</span>
                         <span className="font-bold font-prompt text-teal-700">{currentRawScore}/{currentTotalItems} คะแนน ({currentProg}%)</span>
                       </div>
+
+                      {/* แสดงและแก้ไขเวลาที่บันทึกได้ */}
+                      <div className="flex items-center justify-between bg-teal-50/70 px-3 py-2 rounded-xl border border-teal-100 text-xs">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-teal-600" /> เวลาที่บันทึก:
+                        </span>
+                        <input
+                          type="text"
+                          value={selectedPatient.lastAssessedTime || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const updated = patients.map(p =>
+                              p.id === selectedPatient.id ? { ...p, lastAssessedTime: val } : p
+                            );
+                            setPatients(updated);
+                            setHasUnsavedChanges(true);
+                          }}
+                          placeholder="เช่น 09:30 น."
+                          className="w-24 text-right bg-white border border-teal-200 rounded-lg px-2 py-1 text-xs font-semibold text-teal-800 focus:outline-none focus:border-teal-500"
+                        />
+                      </div>
+
                       <p className="text-[11px] text-slate-500">
                         เมื่อกดปุ่มด้านล่าง ระบบจะบันทึกประวัติลง Google Sheets โดยข้อมูลผู้ป่วยบนหน้าเว็บจะยังคงอยู่ครบถ้วน
                       </p>
